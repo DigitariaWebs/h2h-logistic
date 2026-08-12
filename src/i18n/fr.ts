@@ -157,6 +157,24 @@ export const fr = {
     delivered: 'Livré',
     cancelled: 'Annulée',
   },
+  // ⚠️ MÊME TEXTE QUE LA MARKETPLACE, mot pour mot (cf.
+  // `hand-to-hand` › `components_logistics_hubpresence`). Les trois parties se
+  // retrouvent au même hub à la même minute : deux formulations de la même
+  // consigne feraient douter celui qui lit l'écran de l'autre par-dessus son
+  // épaule. Ne pas « améliorer » d'un seul côté.
+  presence: {
+    title: 'Déclarer ma présence au hub',
+    subText: 'Appuyez sur ce bouton uniquement lorsque vous êtes réellement arrivé au hub ou au point de rendez-vous prévu.',
+    button: 'Je suis au hub',
+    essentialMessage: 'Pas de clic Je suis au hub = présence non déclarée dans l\'application.',
+    earlyRecommend: 'Nous vous recommandons d\'arriver jusqu\'à 10 minutes avant l\'heure prévue.',
+    registered: 'Présence enregistrée ✓',
+    statusPreparation: 'Préparation',
+    statusTolerance: 'Tolérance',
+    statusLate: 'En retard',
+    distanceAway: 'Vous êtes à {distance} m du hub',
+    confidentiality: 'Votre position n\'est utilisée que pendant le créneau pour faciliter la rencontre. Elle n\'est partagée avec l\'autre partie qu\'une fois les deux présences déclarées et les deux positions dans la zone du hub.',
+  },
   zone: {
     title: 'Zone du hub',
     inZone: 'Vous êtes dans la zone du hub',

@@ -55,7 +55,15 @@ const STEPS: StepConfig[] = [
     label: 'Récupération au hub vendeur',
     getDesc: (m) => m.pickupHub.name,
     showTolerance: 'pickup',
-    action: { label: 'Scanner le QR du vendeur', key: 'pickup' },
+    // 🔴 LIBELLÉ CORRIGÉ LE 12/08/2026. Il disait « Scanner le QR du vendeur »
+    // et sautait, de fait, à la caméra : depuis que la déclaration de présence
+    // est la PREMIÈRE page du parcours, ce bouton ouvre cette page-là, pas le
+    // scanner. Un bouton qui nomme une étape qu'il ne montre pas fait douter
+    // de l'écran qui s'ouvre à la place.
+    // ⚠️ MÊMES MOTS QUE LE BANDEAU « ACTION SUIVANTE » (`DirectionHubButton`) :
+    // deux entrées vers le même endroit doivent se lire pareil, sinon on croit
+    // à deux destinations.
+    action: { label: 'Valider la récupération', key: 'pickup' },
     showNav: true,
   },
   {

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, AccessibilityInfo } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -25,6 +25,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useMissionStore } from '@/stores/useMissionStore';
 import { useRouteStore } from '@/stores/useRouteStore';
 import { useEcoImpactStore } from '@/stores/useEcoImpactStore';
+import { isAfterTolerance, getToleranceWindow } from '@/utils/tolerance';
 import { calculateCo2Saved, estimateDistanceKm } from '@/utils/carbon';
 
 type DeliveryStep = 'approach' | 'scan-buyer' | 'scan-package' | 'confirmed';
@@ -47,6 +48,14 @@ export default function DeliveryScreen() {
   const [packageAttempts, setPackageAttempts] = useState(0);
   const [locked, setLocked] = useState(false);
   const [proximity] = useState(180);
+  // 🔴 BATTEMENT DE 10 s — IL FAIT VIVRE LA RÈGLE D'ABSENCE, exactement comme
+  // à la récupération. Sans lui, le cotransporteur particulier qui ATTEND
+  // l'acheteur ne verrait jamais les signalements s'ouvrir.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => clearInterval(id);
+  }, []);
   const [earningsReleased, setEarningsReleased] = useState(false);
   const [displayedEarnings, setDisplayedEarnings] = useState('0.00');
 
@@ -164,6 +173,16 @@ export default function DeliveryScreen() {
 
   // ─── STEP: APPROACH ────────────────────────────────────────
   if (step === 'approach') {
+    // Absence et blocage : ouverts SEULEMENT apres la fin de la tolerance.
+    const absenceUnlocked = isAfterTolerance(
+      mission.deliveryHub.scheduledTime,
+      mission.deliveryHub.toleranceMinutes,
+    );
+    const toleranceEnd = getToleranceWindow(
+      mission.deliveryHub.scheduledTime,
+      mission.deliveryHub.toleranceMinutes,
+    ).end;
+
     const proximityColor = proximity > 500 ? colors.primary : colors.success;
     const proximityLabel = proximity > 500 ? 'Vous approchez du hub' : 'Vous êtes à proximité !';
 
@@ -218,13 +237,27 @@ export default function DeliveryScreen() {
           </Card>
 
           {/* Incident entry points (hub de remise) */}
+          {/* 🔴 ABSENCE ET BLOCAGE N'OUVRENT QU'APRÈS LA TOLÉRANCE (règle
+              client du 12/08/2026), comme à la récupération. Pendant le
+              créneau, l'acheteur a le droit d'arriver.
+              ⚠️ Ici il n'y a PAS de « refuser le colis » : la remise n'a donc
+              aucun lien pendant le créneau — d'où la ligne qui dit à partir de
+              quand, sans quoi ce serait un vide inexpliqué. */}
           <View style={s.incidentLinks}>
-            <TouchableOpacity onPress={() => openIncident('buyer_absent')} hitSlop={8}>
-              <Text style={[s.incidentLink, { color: colors.primary }]}>{"L'acheteur n'est pas présent ?"}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => openIncident('hub_blocked')} hitSlop={8}>
-              <Text style={[s.incidentLink, { color: colors.textSecondary }]}>Signaler un blocage au hub</Text>
-            </TouchableOpacity>
+            {absenceUnlocked ? (
+              <>
+                <TouchableOpacity onPress={() => openIncident('buyer_absent')} hitSlop={8}>
+                  <Text style={[s.incidentLink, { color: colors.primary }]}>{"L'acheteur n'est pas présent ?"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => openIncident('hub_blocked')} hitSlop={8}>
+                  <Text style={[s.incidentLink, { color: colors.textSecondary }]}>Signaler un blocage au hub</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <Text style={[s.incidentGateHint, { color: colors.textSecondary }]}>
+                Signaler une absence ou un blocage sera possible après {toleranceEnd}.
+              </Text>
+            )}
           </View>
         </ScrollView>
 
@@ -426,6 +459,8 @@ const s = StyleSheet.create({
   proximityText: { ...Typography.bodyMedium },
   incidentLinks: { alignItems: 'center', gap: Spacing.sm, paddingTop: Spacing.xs },
   incidentLink: { ...Typography.captionMedium, textDecorationLine: 'underline', textAlign: 'center' },
+  // Jamais souligne : ce n'est pas un lien, c'est la raison de leur absence.
+  incidentGateHint: { ...Typography.caption, textAlign: 'center' },
 
   buyerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   buyerAvatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },

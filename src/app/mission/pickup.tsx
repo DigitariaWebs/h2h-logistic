@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, AccessibilityInfo } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -16,6 +16,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Toast } from '@/components/ui/Toast';
 import { QRScanner } from '@/components/logistics/QRScanner';
+import { HubPresenceCard } from '@/components/logistics/HubPresenceCard';
 import { ToleranceWindow } from '@/components/logistics/ToleranceWindow';
 import { Icon } from '@/components/ui/Icon';
 import { ScanProgressDots } from '@/components/mission/ScanProgressDots';
@@ -24,8 +25,19 @@ import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useMissionStore } from '@/stores/useMissionStore';
+import { mockHubs } from '@/services/mock/hubs';
+import { isAfterTolerance, getToleranceWindow } from '@/utils/tolerance';
 
-type PickupStep = 'approach' | 'scan-seller' | 'scan-package' | 'confirmed';
+// 🔴 « presence » EST LA PREMIÈRE PAGE DEPUIS LE 12/08/2026 (demande client).
+// C'est elle qui s'ouvre sous « ACTION SUIVANTE », et c'est la MÊME que celle
+// du vendeur et de l'acheteur côté marketplace : les trois parties arrivent au
+// même hub à la même minute, elles voient désormais le même écran.
+//
+// ⚠️ LA DÉCLARATION A DONC QUITTÉ « approach ». Le bouton « Valider ma présence
+// au hub » qui y vivait est retiré : il ferait doublon avec celui de la page 1,
+// et deux boutons pour un seul acte, c'est le défaut qu'on vient de corriger
+// côté marketplace.
+type PickupStep = 'presence' | 'approach' | 'scan-seller' | 'scan-package' | 'confirmed';
 
 const MAX_PACKAGE_ATTEMPTS = 3;
 
@@ -38,7 +50,11 @@ export default function PickupScreen() {
   const { getMissionById, confirmPickup, updateMissionStatus } = useMissionStore();
 
   const mission = getMissionById(id ?? '');
-  const [step, setStep] = useState<PickupStep>('approach');
+  // ⚠️ HORS HUB, ON SAUTE LA PAGE 1 : un rendez-vous hors hub n'a ni zone ni
+  // point central à montrer, et sa présence ne se vérifie pas au GPS. L'y
+  // envoyer donnerait une page vide dont on ne pourrait pas sortir.
+  const offHubPickup = getMissionById(id ?? '')?.pickupHub.isOffHub === true;
+  const [step, setStep] = useState<PickupStep>(offHubPickup ? 'approach' : 'presence');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'warning' | 'error' } | null>(null);
   const [scannerResetSignal, setScannerResetSignal] = useState(0);
   const [packageAttempts, setPackageAttempts] = useState(0);
@@ -46,6 +62,17 @@ export default function PickupScreen() {
   // Récupération : la présence au hub se valide AVANT le scan (demande client —
   // différence avec la remise qui va directement au scan).
   const [presenceValidated, setPresenceValidated] = useState(false);
+
+  // 🔴 BATTEMENT DE 10 s — IL FAIT VIVRE LA RÈGLE D'ABSENCE.
+  // Les signalements d'absence s'ouvrent à la fin de la tolérance. Sans ce
+  // réveil, la page resterait figée sur son état d'arrivée : le cotransporteur
+  // particulier qui ATTEND le vendeur — c'est-à-dire exactement celui à qui la
+  // règle s'adresse — ne les verrait jamais apparaître.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => clearInterval(id);
+  }, []);
 
   const checkScale = useSharedValue(0);
   const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: checkScale.value }] }));
@@ -62,6 +89,9 @@ export default function PickupScreen() {
   }
 
   const missionCode = `HTH-${mission.id.slice(-4).toUpperCase()}`;
+  // Le hub complet (adresse, horaires, coordonnées, zone) — `MissionHub` n'en
+  // porte que le nom et le créneau.
+  const fullHub = mockHubs.find((h) => h.id === mission.pickupHub.id) ?? null;
   const openIncident = (type: string) =>
     router.push({ pathname: '/incident/[type]' as any, params: { type, missionId: mission.id } });
 
@@ -135,23 +165,105 @@ export default function PickupScreen() {
     checkScale.value = withSpring(1, { damping: 12, stiffness: 150 });
   };
 
-  // ─── STEP: APPROACH ────────────────────────────────────────
+  const hubCard = (
+    /* Fiche hub — nom, ADRESSE et HORAIRES, comme sur la marketplace.
+       ⚠️ `MissionHub` ne porte QUE le nom, la ville et le créneau : le reste
+       vit dans `mockHubs`, résolu par id. Le même chemin que `HubZoneCheck`
+       empruntait avant d'être retiré du détail. Adresse et horaires restent
+       facultatifs — un hub introuvable ne doit pas vider l'écran, seulement
+       montrer moins. */
+    <Card>
+      <View style={s.hubRow}>
+        <Icon name="hub-gare" size={28} color={colors.primary} />
+        <View style={s.hubInfo}>
+          <Text style={[s.hubName, { color: colors.text }]}>{mission.pickupHub.name}</Text>
+          <Text style={[s.hubCity, { color: colors.textSecondary }]}>
+            {fullHub ? `${fullHub.address}, ` : ''}{mission.pickupHub.city}
+          </Text>
+          {!!fullHub?.openingHours && (
+            <Text style={[s.hubCity, { color: colors.textSecondary }]}>
+              {fullHub.openingHours}
+            </Text>
+          )}
+        </View>
+      </View>
+    </Card>
+  );
+
+  const validatePresence = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setPresenceValidated(true);
+    showToast('Présence validée au hub ✓', 'success');
+    AccessibilityInfo.announceForAccessibility('Présence validée au hub. Vous pouvez scanner le QR du vendeur.');
+    setStep('approach');
+  };
+
+  // ─── PAGE 1 : DÉCLARER SA PRÉSENCE ─────────────────────────
+  // 🔴 C'est CETTE page qui s'ouvre sous « ACTION SUIVANTE » (demande client du
+  // 12/08/2026), et c'est la MÊME que celle du vendeur et de l'acheteur côté
+  // marketplace : mêmes mots, même ordre, même plan de zone.
+  //
+  // ⚠️ UN SEUL BOUTON, celui de la carte. Il déclare la présence ET fait passer
+  // à la page suivante — pas de « Continuer » en plus, qui ferait deux gestes
+  // pour un seul acte.
+  if (step === 'presence') {
+    return (
+      <View style={[s.screen, { backgroundColor: colors.background }]}>
+        <View style={{ paddingTop: insets.top, paddingHorizontal: Spacing.lg }}>
+          <Header title="Récupération du colis" showBack />
+          <Text style={[s.missionRef, { color: colors.textSecondary }]}>#{missionCode}</Text>
+        </View>
+
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+          {hubCard}
+
+          {fullHub ? (
+            <HubPresenceCard
+              hub={fullHub}
+              scheduledTime={mission.pickupHub.scheduledTime}
+              toleranceMinutes={mission.pickupHub.toleranceMinutes}
+              onConfirm={validatePresence}
+            />
+          ) : (
+            /* ⚠️ HUB INTROUVABLE DANS LE RÉFÉRENTIEL : pas de zone à dessiner,
+               mais la présence doit rester déclarable — sinon le scan reste
+               verrouillé et la co-livraison s'arrête sur un écran muet. */
+            <Button
+              title={t('presence.button')}
+              onPress={validatePresence}
+              variant="gradient"
+              style={{ minHeight: 52 }}
+            />
+          )}
+        </ScrollView>
+
+        {toast && (
+          <Toast message={toast.msg} type={toast.type} visible onHide={() => setToast(null)} duration={2500} />
+        )}
+      </View>
+    );
+  }
+
+  // ─── PAGE 2 : APPROCHE ET SCAN ─────────────────────────────
   if (step === 'approach') {
     // Off-hub rendez-vous → no GPS zone, just an info note (kept intact).
     const isOffHub = mission.pickupHub.isOffHub === true;
-    // On-hub : la présence doit être validée avant de pouvoir scanner.
+    // On-hub : la présence a été déclarée à la page 1.
     const scanUnlocked = isOffHub || presenceValidated;
+
+    // Absence et blocage : ouverts SEULEMENT après la fin de la tolérance.
+    const absenceUnlocked = isAfterTolerance(
+      mission.pickupHub.scheduledTime,
+      mission.pickupHub.toleranceMinutes,
+    );
+    const toleranceEnd = getToleranceWindow(
+      mission.pickupHub.scheduledTime,
+      mission.pickupHub.toleranceMinutes,
+    ).end;
 
     const goToSellerScan = () => {
       AccessibilityInfo.announceForAccessibility('Étape 1 sur 2 : scanner le QR du vendeur.');
       setStep('scan-seller');
-    };
-
-    const validatePresence = () => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setPresenceValidated(true);
-      showToast('Présence validée au hub ✓', 'success');
-      AccessibilityInfo.announceForAccessibility('Présence validée au hub. Vous pouvez scanner le QR du vendeur.');
     };
 
     return (
@@ -163,40 +275,25 @@ export default function PickupScreen() {
         </View>
 
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-          <Card>
-            <View style={s.hubRow}>
-              <Icon name="hub-gare" size={28} color={colors.primary} />
-              <View style={s.hubInfo}>
-                <Text style={[s.hubName, { color: colors.text }]}>{mission.pickupHub.name}</Text>
-                <Text style={[s.hubCity, { color: colors.textSecondary }]}>{mission.pickupHub.city}</Text>
-              </View>
-            </View>
-          </Card>
+          {hubCard}
 
           <ToleranceWindow
             scheduledTime={mission.pickupHub.scheduledTime}
             toleranceMinutes={mission.pickupHub.toleranceMinutes}
           />
 
-          {isOffHub ? (
+          {/* 🔴 « Valider ma présence au hub » A ÉTÉ RETIRÉ D'ICI le 12/08/2026,
+              à la demande du client : la déclaration se fait à la page
+              précédente. Le laisser ici ferait deux boutons pour un seul acte —
+              exactement le doublon corrigé côté marketplace le même jour.
+              ⚠️ Hors hub, la page reste la première du parcours : son bandeau
+              « pas de vérification GPS » explique pourquoi rien n'a été
+              déclaré, et le scan n'attend aucune présence. */}
+          {isOffHub && (
             <View style={[s.offHubBanner, { backgroundColor: colors.warning + '14' }]}>
               <Icon name="location-filled" size={14} color={colors.warning} />
               <Text style={[s.offHubText, { color: colors.warning }]}>{t('zone.offHubNoGps')}</Text>
             </View>
-          ) : presenceValidated ? (
-            <View style={[s.proximityCard, { backgroundColor: colors.success + '12' }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Icon name="checkmark-circle" size={16} color={colors.success} />
-                <Text style={[s.proximityText, { color: colors.success }]}>Présence validée au hub ✓</Text>
-              </View>
-            </View>
-          ) : (
-            <Button
-              title="Valider ma présence au hub"
-              onPress={validatePresence}
-              variant="outline"
-              style={{ minHeight: 48 }}
-            />
           )}
 
           <Card>
@@ -217,17 +314,37 @@ export default function PickupScreen() {
             </View>
           </Card>
 
-          {/* Incident entry points (rendez-vous de collecte) */}
+          {/* ── Points d'entrée incident ──────────────────────────────────
+              🔴 L'ABSENCE ET LE BLOCAGE N'OUVRENT QU'APRÈS LA TOLÉRANCE
+              (règle client du 12/08/2026). Pendant le créneau, le vendeur a le
+              droit d'arriver : le déclarer absent à la 3ᵉ minute serait un
+              signalement contre quelqu'un qui n'est pas encore en retard.
+              ⚠️ « Refuser le colis » RESTE, LUI, TOUJOURS OUVERT : il ne parle
+              pas d'un retard mais de ce qu'on a sous les yeux — un colis non
+              conforme l'est dès la première seconde du créneau. */}
           <View style={s.incidentLinks}>
-            <TouchableOpacity onPress={() => openIncident('seller_absent')} hitSlop={8}>
-              <Text style={[s.incidentLink, { color: colors.primary }]}>{"Le vendeur n'est pas présent ?"}</Text>
-            </TouchableOpacity>
+            {absenceUnlocked && (
+              <TouchableOpacity onPress={() => openIncident('seller_absent')} hitSlop={8}>
+                <Text style={[s.incidentLink, { color: colors.primary }]}>{"Le vendeur n'est pas présent ?"}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity onPress={() => openIncident('refuse_package')} hitSlop={8}>
               <Text style={[s.incidentLink, { color: colors.textSecondary }]}>Refuser le colis (non conforme)</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => openIncident('collect_absent')} hitSlop={8}>
-              <Text style={[s.incidentLink, { color: colors.textSecondary }]}>Signaler un blocage à la collecte</Text>
-            </TouchableOpacity>
+            {absenceUnlocked && (
+              <TouchableOpacity onPress={() => openIncident('collect_absent')} hitSlop={8}>
+                <Text style={[s.incidentLink, { color: colors.textSecondary }]}>Signaler un blocage à la collecte</Text>
+              </TouchableOpacity>
+            )}
+            {/* ⚠️ DIRE QUAND, PLUTÔT QUE DE LAISSER CHERCHER. Sans cette ligne,
+                le cotransporteur particulier dont le vendeur a cinq minutes de
+                retard cherche « le vendeur n'est pas présent ? » et ne le
+                trouve pas — l'absence d'un lien n'explique rien. */}
+            {!absenceUnlocked && (
+              <Text style={[s.incidentGateHint, { color: colors.textSecondary }]}>
+                Signaler une absence ou un blocage sera possible après {toleranceEnd}.
+              </Text>
+            )}
           </View>
         </ScrollView>
 
@@ -439,6 +556,9 @@ const s = StyleSheet.create({
   scanGateHint: { ...Typography.caption, textAlign: 'center', marginBottom: Spacing.sm },
   incidentLinks: { alignItems: 'center', gap: Spacing.sm, paddingTop: Spacing.xs },
   incidentLink: { ...Typography.captionMedium, textDecorationLine: 'underline', textAlign: 'center' },
+  // Explique l'absence des liens pendant le creneau — jamais souligne : ce
+  // n'est pas un lien, c'est la raison pour laquelle il n'y en a pas.
+  incidentGateHint: { ...Typography.caption, textAlign: 'center' },
 
   sellerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   sellerAvatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
