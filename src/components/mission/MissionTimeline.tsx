@@ -85,7 +85,11 @@ const STEPS: StepConfig[] = [
     label: 'Remise au hub destinataire',
     getDesc: (m) => m.deliveryHub.name,
     showTolerance: 'delivery',
-    action: { label: 'Entrer le code acheteur', key: 'delivery' },
+    // 🔴 MÊME CORRECTION QUE CÔTÉ RÉCUPÉRATION (12/08/2026). Il disait « Entrer
+    // le code acheteur » et ouvre en fait la page d'approche : un bouton qui
+    // nomme une étape qu'il ne montre pas fait douter de l'écran qui s'ouvre.
+    // Mêmes mots que le bandeau « ACTION SUIVANTE ».
+    action: { label: 'Valider la remise', key: 'delivery' },
     showNav: true,
   },
   {

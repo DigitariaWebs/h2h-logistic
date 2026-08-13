@@ -33,7 +33,12 @@ export function DirectionHubButton({
 }: DirectionHubButtonProps) {
   const { colors } = useColorScheme();
 
-  const title = phase === 'pickup' ? 'Valider la récupération' : 'Remise';
+  // ⚠️ LES DEUX PHASES SE LISENT PAREIL (12/08/2026). La remise disait
+  // « Remise » quand la récupération disait « Valider la récupération » : deux
+  // grammaires pour deux moments du même parcours. Et le bouton jumeau de la
+  // timeline disait, lui, « Entrer le code acheteur » — il annonçait la saisie
+  // alors qu'il ouvre la page d'approche. Un même endroit, trois formulations.
+  const title = phase === 'pickup' ? 'Valider la récupération' : 'Valider la remise';
   const gradientColors: [string, string] =
     phase === 'pickup' ? [colors.primary, '#0C1655'] : [colors.primary, colors.primaryGradientEnd];
 
