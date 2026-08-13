@@ -42,7 +42,10 @@ export const EMPTY_MESSAGES = {
   },
   routes: {
     title: 'Publiez votre premier trajet',
-    description: 'Transformez vos déplacements quotidiens en revenus complémentaires.',
+    // ⚠️ « participation aux frais », JAMAIS « revenus » : le cotransportage
+    // (L. 3232-1) est un partage des frais, pas une rémunération. Le mot promet
+    // le cadre juridique autant qu'il décrit l'écran.
+    description: 'Transformez vos déplacements quotidiens en participation aux frais.',
   },
   history: {
     title: 'Aucune co-livraison effectuée',
