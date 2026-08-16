@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.handtohand.logistic",
-      "buildNumber": "18",
+      "buildNumber": "22",
       "supportsTablet": true,
       "icon": "./assets/expo.icon",
       "infoPlist": {
