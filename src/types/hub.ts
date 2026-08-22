@@ -1,11 +1,10 @@
-export type HubType =
-  | 'gare'              // 🚂 Train station
-  | 'bus_station'       // 🚌 Bus station
-  | 'highway_exit'      // 🛣️ Highway exit point
-  | 'shopping_center'   // 🛒 Shopping center
-  | 'partner_shop'      // 🏪 E-commerce partner
-  | 'locker'            // 📦 Automated locker
-  | 'relay_point';      // 📍 Generic relay point
+// 🔴 LA LISTE A DÉMÉNAGÉ DANS `constants/HubTypes.ts`, et elle a doublé.
+// Elle ne couvrait que les sept types des vingt-cinq hubs inventés ; l'enum
+// `public.hub_type` en porte treize — dont **`domicile`**, le type qu'auront
+// les vrais points relais, puisque les hubs sont recrutés auprès de gens qui se
+// portent candidats. Le premier hub réel aurait rendu une icône `undefined`.
+export type { HubType } from '@/constants/HubTypes';
+import type { HubType } from '@/constants/HubTypes';
 
 export interface Hub {
   id: string;

@@ -57,22 +57,3 @@ export function getHubsByCity(city: string): Hub[] {
 
 import type { IconName } from '@/components/ui/Icon';
 
-export const HUB_TYPE_ICON_NAMES: Record<HubType, IconName> = {
-  gare: 'hub-gare',
-  bus_station: 'hub-bus',
-  highway_exit: 'hub-highway',
-  shopping_center: 'hub-shopping',
-  partner_shop: 'hub-partner',
-  locker: 'hub-locker',
-  relay_point: 'hub-relay',
-};
-
-export const HUB_TYPE_LABELS: Record<HubType, string> = {
-  gare: 'Gare',
-  bus_station: 'Gare routière',
-  highway_exit: 'Sortie autoroute',
-  shopping_center: 'Centre commercial',
-  partner_shop: 'Partenaire e-commerce',
-  locker: 'Locker automatique',
-  relay_point: 'Point relais',
-};

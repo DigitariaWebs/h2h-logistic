@@ -11,7 +11,7 @@ import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useTranslation } from '@/hooks/useTranslation';
 import { hubZoneDiameterM } from '@/constants/hubZone';
-import { HUB_TYPE_ICON_NAMES, HUB_TYPE_LABELS } from '@/services/mock/hubs';
+import { iconeHub, libelleHub } from '@/constants/HubTypes';
 
 interface HubCardProps {
   hub: Hub;
@@ -39,7 +39,7 @@ export function HubCard({
   const { t } = useTranslation();
   const router = useRouter();
 
-  const typeLabel = HUB_TYPE_LABELS[hub.type] ?? hub.type;
+  const typeLabel = libelleHub(hub.type) ?? hub.type;
   const zoneChipLabel = t('zone.sizeChip').replace('{diameter}', String(hubZoneDiameterM(hub)));
 
   const openReport = () => {

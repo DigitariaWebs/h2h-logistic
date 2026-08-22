@@ -21,12 +21,15 @@ export default function RoutesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { transporterStatus, toggleOnline } = useAuthStore();
-  const { routes, loadMockData } = useRouteStore();
+  const { routes, hydrate } = useRouteStore();
   const [filter, setFilter] = useState<FilterTab>('active');
 
   const isOnline = transporterStatus === 'active';
 
-  useEffect(() => { loadMockData(); }, []);
+  // ⚠️ ON RELIT LA BASE, ON NE CHARGE PLUS DE DONNÉES DE DÉMONSTRATION. Les
+  // trois trajets de `mock/routes.ts` s'affichaient pour tout le monde, y
+  // compris pour un compte qui n'avait jamais rien publié.
+  useEffect(() => { void hydrate(); }, [hydrate]);
 
   const filtered = filter === 'all'
     ? routes
@@ -155,7 +158,7 @@ const styles = StyleSheet.create({
   fab: { position: 'absolute', right: Spacing.xl, zIndex: 20 },
   fabGradient: {
     width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#14248A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 8, elevation: 8,
+    shadowColor: '#007BA7', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 8, elevation: 8,
   },
   fabIcon: { color: '#FFFFFF', fontSize: 28, fontWeight: '300', lineHeight: 30, marginTop: -1 },
 });

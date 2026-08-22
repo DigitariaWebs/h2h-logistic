@@ -56,7 +56,10 @@ export default function PublishReviewScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
     try {
-      await publishRoute(user?.id ?? 'user-1');
+      // ⚠️ PLUS D'IDENTIFIANT EN PARAMÈTRE : le serveur le déduit du jeton.
+      // `publier_trajet` écrit `transporter_id = app.uid()`. L'ancien repli
+      // `?? 'user-1'` publiait au nom d'un compte de démonstration.
+      await publishRoute();
 
       // Show success
       setShowSuccess(true);

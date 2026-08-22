@@ -1,4 +1,9 @@
-import React, { useMemo } from 'react';
+// LES HUBS DE REMISE — même correction que pour la récupération.
+//
+// 🔴 CET ÉCRAN LISAIT LES VINGT-CINQ HUBS INVENTÉS de `services/mock/hubs.ts`.
+// `public.hubs` est vide : les points relais sont des gens qui se portent
+// candidats, et le recrutement se fait au lancement.
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,7 +18,8 @@ import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useRouteStore } from '@/stores/useRouteStore';
 import { Icon } from '@/components/ui/Icon';
-import { getHubsByCity, HUB_TYPE_ICON_NAMES } from '@/services/mock/hubs';
+import { chargerHubsParVille } from '@/services/hubs';
+import { iconeHub } from '@/constants/HubTypes';
 import type { Hub } from '@/types/hub';
 import type { RouteHub } from '@/types/route';
 
@@ -25,7 +31,34 @@ export default function HubDeliveryScreen() {
   const insets = useSafeAreaInsets();
   const { form, setFormField, setStep } = useRouteStore();
 
-  const hubs = useMemo(() => getHubsByCity(form.arrivalCity ?? ''), [form.arrivalCity]);
+  const [hubs, setHubs] = useState<Hub[]>([]);
+  const [chargement, setChargement] = useState(true);
+  const ville = form.arrivalCity ?? '';
+
+  useEffect(() => {
+    let annule = false;
+    setChargement(true);
+    chargerHubsParVille(ville)
+      .then((h) => { if (!annule) setHubs(h); })
+      .catch((e: unknown) => {
+        console.error('[hubs] lecture impossible', e);
+        if (!annule) setHubs([]);
+      })
+      .finally(() => { if (!annule) setChargement(false); });
+    return () => { annule = true; };
+  }, [ville]);
+
+  // 🔴 UNE REMISE SANS HUB EST LÉGITIME : `route_stops.hub_id` est nullable, et
+  // la remise se fait alors en main propre — ce que l'application sait déjà
+  // gérer (`off_hub_possible`, `is_off_hub`).
+  const continuerSansHub = useCallback(() => {
+    setFormField('deliveryHubs', [
+      { hubId: '', hubName: ville, city: ville, arrivalTime: '' },
+    ]);
+    setStep(5);
+    router.push('/publish/schedule');
+  }, [setFormField, setStep, router, ville]);
+
   const selectedIds = form.deliveryHubs.map((h) => h.hubId);
   const atMax = selectedIds.length >= MAX_HUBS;
 
@@ -88,6 +121,29 @@ export default function HubDeliveryScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
+          ListEmptyComponent={
+            chargement ? (
+              <Text style={[styles.info, { color: colors.textSecondary }]}>
+                Recherche des points relais…
+              </Text>
+            ) : (
+              /* 🔴 MÊME ÉTAT VIDE QU'À LA RÉCUPÉRATION, et pour la même raison :
+                 le réseau se constitue au lancement. Une étape obligatoire sur
+                 une liste vide est une impasse, pas une exigence. */
+              <View style={{ gap: Spacing.md }}>
+                <Text style={[styles.info, { color: colors.textSecondary }]}>
+                  Aucun point relais à {ville} pour l’instant. Le réseau se
+                  constitue — des habitants se portent candidats pour accueillir
+                  les colis.
+                </Text>
+                <Button
+                  title="Continuer sans point relais"
+                  onPress={continuerSansHub}
+                  variant="outline"
+                />
+              </View>
+            )
+          }
           renderItem={({ item }) => {
             const selected = selectedIds.includes(item.id);
             const dimmed = atMax && !selected;
@@ -100,7 +156,7 @@ export default function HubDeliveryScreen() {
                 ]}>
                   <View style={styles.hubTop}>
                     <View style={styles.hubNameRow}>
-                      <Icon name={HUB_TYPE_ICON_NAMES[item.type]} size={20} color={colors.textSecondary} />
+                      <Icon name={iconeHub(item.type)} size={20} color={colors.textSecondary} />
                       <Text style={[styles.hubName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                     </View>
                     {selected && (

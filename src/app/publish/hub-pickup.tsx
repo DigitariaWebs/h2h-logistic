@@ -1,4 +1,16 @@
-import React, { useMemo, useState } from 'react';
+// LE HUB DE RÉCUPÉRATION — celui qui existe, pas celui qu'on invente.
+//
+// 🔴 CET ÉCRAN LISAIT `getHubsByCity()` DE `services/mock/hubs.ts` : vingt-cinq
+// adresses inventées, de Nice à Marseille, avec des identifiants qui ne sont
+// même pas des uuid. Un cotransporteur particulier pouvait donc choisir « Gare
+// de Nice-Ville » et s'y rendre — pour rien.
+//
+// ⚠️ `public.hubs` EST VIDE, ET CE N'EST PAS UN OUBLI : les hubs ne sont pas des
+// lieux qu'on choisit, ce sont des gens qui se portent candidats. Le
+// recrutement se fait au lancement. La liste sera donc vide pour l'instant, et
+// c'est la vérité — on la dit, et on laisse publier sans hub plutôt que de
+// bloquer sur un choix impossible.
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,7 +25,8 @@ import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useRouteStore } from '@/stores/useRouteStore';
 import { Icon } from '@/components/ui/Icon';
-import { getHubsByCity, HUB_TYPE_ICON_NAMES, HUB_TYPE_LABELS } from '@/services/mock/hubs';
+import { chargerHubsParVille } from '@/services/hubs';
+import { iconeHub, libelleHub } from '@/constants/HubTypes';
 import type { Hub } from '@/types/hub';
 
 type ViewMode = 'list' | 'map';
@@ -25,13 +38,43 @@ export default function HubPickupScreen() {
   const { form, setFormField, setStep } = useRouteStore();
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const hubs = useMemo(() => getHubsByCity(form.departureCity ?? ''), [form.departureCity]);
+  const [hubs, setHubs] = useState<Hub[]>([]);
+  const [chargement, setChargement] = useState(true);
+  const ville = form.departureCity ?? '';
+
+  useEffect(() => {
+    let annule = false;
+    setChargement(true);
+    chargerHubsParVille(ville)
+      .then((h) => { if (!annule) setHubs(h); })
+      .catch((e: unknown) => {
+        // ⚠️ SANS CETTE TRACE, une policy refusée est indiscernable d'une ville
+        // sans point relais — et il n'y a aujourd'hui aucun moyen de les
+        // distinguer à l'écran.
+        console.error('[hubs] lecture impossible', e);
+        if (!annule) setHubs([]);
+      })
+      .finally(() => { if (!annule) setChargement(false); });
+    return () => { annule = true; };
+  }, [ville]);
+
   const selectedId = form.pickupHub?.hubId;
 
   const selectHub = (hub: Hub) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setFormField('pickupHub', { hubId: hub.id, hubName: hub.name, city: hub.city, arrivalTime: '' });
   };
+
+  // 🔴 PUBLIER SANS HUB EST UN ÉTAT LÉGITIME, pas un contournement.
+  // `published_routes.departure_hub_id` est nullable, `route_stops.city` aussi :
+  // un trajet ville → ville reste exploitable par l'appariement, et la remise se
+  // fait alors hors hub — ce que l'application sait déjà gérer
+  // (`off_hub_possible`, `is_off_hub` sur les co-livraisons).
+  const continuerSansHub = useCallback(() => {
+    setFormField('pickupHub', { hubId: '', hubName: ville, city: ville, arrivalTime: '' });
+    setStep(4);
+    router.push('/publish/hub-delivery');
+  }, [setFormField, setStep, router, ville]);
 
   const handleNext = () => {
     setStep(4);
@@ -89,7 +132,7 @@ export default function HubPickupScreen() {
                   onPress={() => selectHub(hub)}
                   style={[styles.mapPin, { backgroundColor: selected ? colors.primary + '15' : 'transparent', borderBottomColor: colors.border }]}
                 >
-                  <Icon name={HUB_TYPE_ICON_NAMES[hub.type]} size={18} color={colors.textSecondary} />
+                  <Icon name={iconeHub(hub.type)} size={18} color={colors.textSecondary} />
                   <Text style={[styles.mapPinName, { color: colors.text }]} numberOfLines={1}>{hub.name}</Text>
                   {selected && <Text style={[styles.mapPinCheck, { color: colors.primary }]}>✓</Text>}
                 </TouchableOpacity>
@@ -105,9 +148,34 @@ export default function HubPickupScreen() {
             contentContainerStyle={styles.list}
             ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
             ListEmptyComponent={
-              <Text style={[styles.empty, { color: colors.textSecondary }]}>
-                Aucun hub trouvé pour {form.departureCity}.
-              </Text>
+              chargement ? (
+                <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                  Recherche des points relais…
+                </Text>
+              ) : (
+                /* 🔴 L'ÉTAT VIDE EST L'ÉTAT NORMAL AUJOURD'HUI, et il ne doit
+                   pas être une impasse. Les points relais sont des gens qui se
+                   portent candidats, et le recrutement se fait au lancement :
+                   dire « aucun hub trouvé » puis bloquer le bouton laisserait
+                   un cotransporteur particulier devant une étape qu'il ne peut
+                   pas franchir, sans comprendre pourquoi. */
+                <View style={{ gap: Spacing.md }}>
+                  <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                    Aucun point relais à {ville} pour l’instant. Le réseau se
+                    constitue — des habitants se portent candidats pour accueillir
+                    les colis.
+                  </Text>
+                  <Button
+                    title="Continuer sans point relais"
+                    onPress={continuerSansHub}
+                    variant="outline"
+                  />
+                  <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                    La remise se fera alors directement, en main propre, à l’endroit
+                    convenu avec le vendeur et l’acheteur.
+                  </Text>
+                </View>
+              )
             }
             renderItem={({ item }) => {
               const selected = item.id === selectedId;
@@ -121,7 +189,7 @@ export default function HubPickupScreen() {
                     {/* Top row */}
                     <View style={styles.hubTop}>
                       <View style={styles.hubNameRow}>
-                        <Icon name={HUB_TYPE_ICON_NAMES[item.type]} size={20} color={colors.textSecondary} />
+                        <Icon name={iconeHub(item.type)} size={20} color={colors.textSecondary} />
                         <Text style={[styles.hubName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                       </View>
                       {selected ? (
@@ -129,7 +197,7 @@ export default function HubPickupScreen() {
                           <Text style={styles.checkIcon}>✓</Text>
                         </View>
                       ) : (
-                        <Badge label={HUB_TYPE_LABELS[item.type]} variant="outline" />
+                        <Badge label={libelleHub(item.type)} variant="outline" />
                       )}
                     </View>
 

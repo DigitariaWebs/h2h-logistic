@@ -59,7 +59,12 @@ export default function HomeScreen() {
   const { user, transporterStatus, toggleOnline } = useAuthStore();
   const { missions, loadMockData: loadMissions, getActiveMissions, getPendingMissions, getCompletedMissions } =
     useMissionStore();
-  const { routes, loadMockData: loadRoutes } = useRouteStore();
+  // ⚠️ LES TRAJETS VIENNENT DE LA BASE. Les missions, les gains et l'impact
+  // écologique restent sur leurs données de démonstration — ils seront branchés
+  // avec leurs tranches. Mélanger les deux est le prix de la transition, et il
+  // se voit : le tableau de bord affiche des trajets réels à côté de
+  // co-livraisons qui ne le sont pas encore.
+  const { routes, hydrate: chargerTrajets } = useRouteStore();
   const { summary, loadMockData: loadEarnings } = useEarningsStore();
   const {
     totalKgSavedAllTime,
@@ -98,7 +103,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadMissions();
-    loadRoutes();
+    void chargerTrajets();
     loadEarnings();
     loadEco();
   }, []);
@@ -106,12 +111,18 @@ export default function HomeScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     loadMissions();
-    loadRoutes();
     loadEarnings();
     loadEco();
-    // Simulate network delay
-    setTimeout(() => setRefreshing(false), 800);
-  }, []);
+    // ⚠️ SEULS LES TRAJETS FONT UN VRAI ALLER-RETOUR. On attend celui-là plutôt
+    // que de simuler un délai : un « tirer pour rafraîchir » qui s'arrête avant
+    // que la donnée arrive montre l'ancienne liste et laisse croire que rien
+    // n'a changé.
+    try {
+      await chargerTrajets();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [chargerTrajets, loadMissions, loadEarnings, loadEco]);
 
   // FAB animation
   const fabScale = useSharedValue(1);
@@ -971,7 +982,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
 
     // Shadow
-    shadowColor: '#14248A',
+    shadowColor: '#007BA7',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
