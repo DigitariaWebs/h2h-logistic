@@ -126,27 +126,40 @@ export default function CompleteProfileScreen() {
     }
   }, [showCityPicker]);
 
+  const [erreur, setErreur] = useState('');
+
+  // 🔴 CET ÉCRAN ÉCRIT MAINTENANT DANS UN PROFIL PARTAGÉ. `profiles` est la
+  // MÊME ligne que sur HandtoHand : ce prénom s'affichera aussi là-bas. C'est
+  // pour ça que le bouton « Plus tard » a disparu — il appelait
+  // `completeProfile` avec le prénom en dur « Cotransporteur particulier », ce
+  // qui, avec une vraie base, écrirait cette chaîne comme prénom de la personne
+  // sur les deux applications.
+  //
+  // ⚠️ C'EST AUSSI ICI QUE LE RÔLE SE DEMANDE (`request_role('transporter')`).
+  // Sans cet appel, aucune ligne `user_roles` n'existe, donc le support n'a
+  // rien à examiner, donc l'écran d'attente ne se rouvre jamais.
   const handleSubmit = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await completeProfile({
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      city: city || 'Non renseignée',
-      transportType: 'car',
-      avatar,
-    });
-    router.replace('/(auth)/convention');
-  }, [firstName, lastName, city, avatar]);
-
-  const handleSkip = useCallback(async () => {
-    await completeProfile({
-      firstName: 'Cotransporteur particulier',
-      lastName: '',
-      city: 'Non renseignée',
-      transportType: 'car',
-    });
-    router.replace('/(auth)/convention');
-  }, []);
+    setErreur('');
+    try {
+      await completeProfile({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        city: city || 'Non renseignée',
+        transportType: 'car',
+        avatar,
+      });
+      router.replace('/(auth)/convention');
+    } catch (e) {
+      // ⚠️ ON NE NAVIGUE PAS SUR UN ÉCHEC. Avancer alors que rien n'a été
+      // enregistré renverrait la personne à cet écran au prochain lancement,
+      // sans jamais lui dire pourquoi.
+      console.error('[auth] profil non enregistre', e);
+      setErreur(
+        e instanceof Error ? e.message : "Impossible d'enregistrer le profil pour le moment.",
+      );
+    }
+  }, [firstName, lastName, city, avatar, completeProfile, router]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -262,9 +275,9 @@ export default function CompleteProfileScreen() {
           disabled={!isValid}
           loading={isLoading}
         />
-        <TouchableOpacity onPress={handleSkip} hitSlop={16} style={styles.skipButton}>
-          <Text style={[styles.skipText, { color: colors.textSecondary }]}>Plus tard</Text>
-        </TouchableOpacity>
+        {erreur ? (
+          <Text style={[styles.skipText, { color: colors.error }]}>{erreur}</Text>
+        ) : null}
       </Animated.View>
     </View>
   );

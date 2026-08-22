@@ -71,9 +71,12 @@ export default function AuthEntryScreen() {
           Application de cotransportage de colis entre particuliers sur trajets déjà prévus.
         </Text>
 
+        {/* ⚠️ L'E-MAIL, PAS LE NUMÉRO : l'instance Clerk est partagée avec la
+            place de marché — elle doit l'être — et n'accepte pas encore les
+            numéros français. `phone.tsx` reste dessiné et dormant. */}
         <Button
-          title="Continuer avec un numéro"
-          onPress={() => router.push('/(auth)/phone')}
+          title="Continuer avec un e-mail"
+          onPress={() => router.push('/(auth)/email')}
           variant="gradient"
         />
 

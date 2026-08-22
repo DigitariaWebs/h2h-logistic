@@ -1,5 +1,21 @@
 // Le parcours de récupération — ce que chaque page montre, et dans quel ordre.
 //
+// 🔴 CE FICHIER VIVAIT DANS `src/app/mission/`, ET ÇA RENDAIT L'APPLICATION
+// IMPOSSIBLE À CONSTRUIRE. `expo-router` balaie TOUT `src/app` avec un
+// `require.context` : ce test devenait donc une route (`/mission/pickupFlow.test`,
+// visible dans les types générés) ET entrait dans le paquet. Or il importe
+// `node:test`, qui n'existe pas sous React Native :
+//
+//     Error: Unable to resolve module node:test from src/app/mission/pickupFlow.test.ts
+//
+// `npm test` passait, `tsc` passait, l'application se lançait en développement —
+// et `expo export` échouait. Le défaut est arrivé avec la première suite de
+// tests de l'app (commit `94a35c2`) et n'a été vu qu'en tentant un vrai paquet.
+//
+// ⚠️ LA LEÇON : dans un projet expo-router, `src/app` n'est pas un dossier
+// source, c'est une TABLE DE ROUTES. Rien qui ne soit pas un écran n'y a sa
+// place — pas même un test.
+//
 // 🔴 POURQUOI DES TESTS QUI LISENT DU JSX. Ces règles ne vivent dans aucun
 // module pur : elles sont dans l'agencement des écrans. Elles se cassent donc
 // en silence — l'application compile, s'affiche, et se comporte mal. Trois

@@ -10,6 +10,7 @@ import Animated, {
   withDelay,
   Easing,
 } from 'react-native-reanimated';
+import { useClerk } from '@clerk/expo';
 import { Typography } from '@/constants/Typography';
 import { Spacing } from '@/constants/Spacing';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -19,6 +20,7 @@ const LOGO = require('@/assets/images/logo.png');
 type Target =
   | '/(onboarding)'
   | '/(auth)'
+  | '/(auth)/complete-profile'
   | '/(auth)/convention'
   | '/(auth)/iban'
   | '/(auth)/pending-validation'
@@ -26,6 +28,11 @@ type Target =
 
 export default function SplashScreen() {
   const hydrate = useAuthStore((s) => s.hydrate);
+  // 🔴 ON ATTEND QUE CLERK SOIT CHARGÉ AVANT DE DÉCIDER. `hydrate()` lit la
+  // session via `peekClerk()` : appelée trop tôt, elle ne voit rien et conclut
+  // « personne n'est connecté ». L'application renverrait alors à l'écran de
+  // connexion une personne dont la session est parfaitement valide.
+  const clerk = useClerk();
   const [target, setTarget] = useState<Target | null>(null);
 
   const logoOpacity = useSharedValue(0);
@@ -46,6 +53,7 @@ export default function SplashScreen() {
       withTiming(0, { duration: 600, easing: Easing.out(Easing.cubic) }),
     );
 
+    if (!clerk?.loaded) return;
     let cancelled = false;
     (async () => {
       // Wait for storage hydration AND a minimum splash duration. Then render
@@ -58,7 +66,12 @@ export default function SplashScreen() {
       const { isOnboarded, isAuthenticated, user } = useAuthStore.getState();
       if (!isOnboarded) setTarget('/(onboarding)');
       else if (!isAuthenticated) setTarget('/(auth)');
-      else if (!user?.convention) setTarget('/(auth)/convention');
+      // ⚠️ « PROFIL INCOMPLET » SE MESURE AU PRÉNOM, pas à un drapeau de Clerk.
+      // C'est aussi l'écran qui appelle `request_role('transporter')` : sans lui,
+      // aucune ligne `user_roles` n'existe, donc rien à examiner pour le
+      // support, donc l'attente serait éternelle.
+      else if (!user?.firstName) setTarget('/(auth)/complete-profile');
+      else if (!user.convention) setTarget('/(auth)/convention');
       else if (!user.convention.iban) setTarget('/(auth)/iban');
       else if (!user.documentsVerified) setTarget('/(auth)/pending-validation');
       else setTarget('/(tabs)');
@@ -67,7 +80,7 @@ export default function SplashScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [clerk?.loaded]);
 
   const logoAnimatedStyle = useAnimatedStyle(() => ({
     opacity: logoOpacity.value,
@@ -85,7 +98,7 @@ export default function SplashScreen() {
 
   return (
     <LinearGradient
-      colors={['#14248A', '#2A8A6A']}
+      colors={['#007BA7', '#2A8A6A']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}

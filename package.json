@@ -13,11 +13,14 @@
     "test": "node --test --import ./scripts/node-test-alias.mjs \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@clerk/expo": "^4.5.2",
     "@expo-google-fonts/poppins": "^0.4.1",
+    "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.6",
+    "@supabase/supabase-js": "^2.112.3",
     "dayjs": "^1.11.20",
     "expo": "~54.0.0",
     "expo-blur": "~15.0.7",
