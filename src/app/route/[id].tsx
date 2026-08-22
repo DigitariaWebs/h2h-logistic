@@ -26,8 +26,34 @@ export default function RouteDetailScreen() {
   const { colors } = useColorScheme();
   const router = useRouter();
   const { routes, updateRoute, deleteRoute, hasActiveMission, toggleRouteStatus } = useRouteStore();
+  // 🔴 CE HOOK ET LE `useMemo` PLUS BAS ÉTAIENT DÉCLARÉS APRÈS LE
+  // `if (!route) return`. Le nombre de hooks changeait donc d'un rendu à
+  // l'autre, et React lève « Rendered more hooks than during the previous
+  // render » dès que le trajet apparaît — c'est-à-dire dès que l'écran sert.
+  // Ils remontent ici, avant toute sortie anticipée.
+  const { missions } = useMissionStore();
 
   const route = routes.find((r) => r.id === id);
+
+  // ⚠️ IL TOLÈRE UN TRAJET ABSENT, puisqu'il s'exécute maintenant AVANT la
+  // garde. Sans trajet, il n'y a personne à afficher : une table vide.
+  const participantsByHubId = useMemo(() => {
+    const map: Record<string, HubParticipantInfo[]> = {};
+    if (!route) return map;
+    const routeMissions = missions.filter(
+      (m) => m.routeId === route.id && ACTIVE_STATUSES.includes(m.status),
+    );
+    for (const m of routeMissions) {
+      const sellerKey = m.pickupHub.id;
+      if (!map[sellerKey]) map[sellerKey] = [];
+      map[sellerKey].push({ participant: m.seller, role: 'seller' });
+      const buyerKey = m.deliveryHub.id;
+      if (!map[buyerKey]) map[buyerKey] = [];
+      map[buyerKey].push({ participant: m.buyer, role: 'buyer' });
+    }
+    return map;
+  }, [missions, route]);
+
   if (!route) {
     return (
       <SafeAreaWrapper>
@@ -43,22 +69,7 @@ export default function RouteDetailScreen() {
   const avgEarnings = route.missionsCount > 0 ? 4.5 : 0; // mock average
 
   // ─── Participants per hubId from active missions on this route ───
-  const { missions } = useMissionStore();
-  const participantsByHubId = useMemo(() => {
-    const map: Record<string, HubParticipantInfo[]> = {};
-    const routeMissions = missions.filter(
-      (m) => m.routeId === route.id && ACTIVE_STATUSES.includes(m.status),
-    );
-    for (const m of routeMissions) {
-      const sellerKey = m.pickupHub.id;
-      if (!map[sellerKey]) map[sellerKey] = [];
-      map[sellerKey].push({ participant: m.seller, role: 'seller' });
-      const buyerKey = m.deliveryHub.id;
-      if (!map[buyerKey]) map[buyerKey] = [];
-      map[buyerKey].push({ participant: m.buyer, role: 'buyer' });
-    }
-    return map;
-  }, [missions, route.id]);
+  // (calculé plus haut, avant la garde — voir la note.)
 
   const handleChipPress = (info: HubParticipantInfo) => {
     router.push({

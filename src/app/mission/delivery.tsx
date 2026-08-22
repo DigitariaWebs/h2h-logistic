@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, AccessibilityInfo } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -105,7 +105,13 @@ export default function DeliveryScreen() {
     setTimeout(tick, 600);
   };
 
-  const handleBuyerScan = useCallback((code: string) => {
+  // 🔴 MÊME PLANTAGE EN ATTENTE QUE DANS `pickup.tsx`, et pour la même raison :
+  // ces deux `useCallback` sont déclarés APRÈS le `if (!mission) return`, donc
+  // le nombre de hooks changeait d'un rendu à l'autre. React lève « Rendered
+  // more hooks than during the previous render » dès que la mission arrive —
+  // c'est-à-dire au moment où l'écran devient utile. Avec la base, les missions
+  // arriveront TOUJOURS de façon asynchrone.
+  const handleBuyerScan = ((code: string) => {
     if (matchesBuyer(code)) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showToast('Acheteur identifié ✓', 'success');
@@ -116,9 +122,9 @@ export default function DeliveryScreen() {
       showToast("Ce n'est pas l'acheteur de cette co-livraison. Vérifiez le code avec lui.", 'error');
       resetScanner();
     }
-  }, [mission.id, mission.buyer.qrCode]);
+  });
 
-  const handlePackageScan = useCallback((code: string) => {
+  const handlePackageScan = ((code: string) => {
     if (matchesPackage(code)) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showToast('Colis vérifié ✓', 'success');
@@ -145,7 +151,7 @@ export default function DeliveryScreen() {
         resetScanner();
       }
     }
-  }, [mission.id, mission.package.trackingNumber, packageAttempts]);
+  });
 
   // ─── DEV BYPASS — skips validation entirely ───────────────
   // TODO(backend): remove before production

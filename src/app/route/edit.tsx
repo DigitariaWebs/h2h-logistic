@@ -25,6 +25,25 @@ export default function EditRouteScreen() {
   const { routes, updateRoute, hasActiveMission } = useRouteStore();
 
   const route = routes.find((r) => r.id === id);
+
+  // 🔴 CES SIX `useState` ÉTAIENT DÉCLARÉS APRÈS LE `if (!route) return`, ce qui
+  // faisait varier le nombre de hooks d'un rendu à l'autre : React lève
+  // « Rendered more hooks than during the previous render » dès que le trajet
+  // arrive. C'était le cas le plus net des quatre écrans concernés — six hooks
+  // d'un coup.
+  //
+  // ⚠️ ILS S'INITIALISENT DEPUIS UN TRAJET QUI PEUT ÊTRE ABSENT. On donne donc
+  // une valeur de repli ; elle ne s'affiche jamais, puisque la garde juste en
+  // dessous rend l'écran « introuvable » dans ce cas.
+  const [transportType, setTransportType] = useState<TransportTypeId>(
+    route?.transportType ?? 'car',
+  );
+  const [maxPackages, setMaxPackages] = useState(route?.maxPackages ?? 1);
+  const [maxSize, setMaxSize] = useState<PackageSize>(route?.maxSize ?? 'M');
+  const [maxWeight, setMaxWeight] = useState(route?.maxWeight ?? 5);
+  const [horsHub, setHorsHub] = useState(route?.horsHub ?? false);
+  const [showToast, setShowToast] = useState(false);
+
   if (!route) {
     return (
       <View style={[s.screen, { backgroundColor: colors.background, paddingTop: insets.top }]}>
@@ -35,14 +54,6 @@ export default function EditRouteScreen() {
   }
 
   const hasMission = hasActiveMission(route.id);
-
-  // Editable fields
-  const [transportType, setTransportType] = useState<TransportTypeId>(route.transportType);
-  const [maxPackages, setMaxPackages] = useState(route.maxPackages);
-  const [maxSize, setMaxSize] = useState<PackageSize>(route.maxSize);
-  const [maxWeight, setMaxWeight] = useState(route.maxWeight);
-  const [horsHub, setHorsHub] = useState(route.horsHub);
-  const [showToast, setShowToast] = useState(false);
 
   const handleSave = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

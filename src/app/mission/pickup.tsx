@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, AccessibilityInfo } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -113,7 +113,20 @@ export default function PickupScreen() {
     return !!mission.package.trackingNumber && normalized === mission.package.trackingNumber.toUpperCase();
   };
 
-  const handleSellerScan = useCallback((code: string) => {
+  // 🔴 CES DEUX-LÀ ÉTAIENT DES `useCallback`, ET C'ÉTAIT UN PLANTAGE EN ATTENTE.
+  // Ils sont déclarés APRÈS le `if (!mission) return` du dessus : le nombre de
+  // hooks changeait donc d'un rendu à l'autre, et React lève « Rendered more
+  // hooks than during the previous render » dès que `mission` passe de nul à
+  // présent — c'est-à-dire au moment précis où l'écran devient utile.
+  //
+  // ⚠️ ÇA NE SE VOYAIT QUE PAR INTERMITTENCE tant que les missions venaient
+  // d'un tableau en mémoire, déjà rempli au montage. Avec la base, elles
+  // arriveront TOUJOURS de façon asynchrone : le plantage passerait de « parfois »
+  // à « à chaque ouverture ».
+  //
+  // ⚠️ DES FONCTIONS SIMPLES SUFFISENT : `QRScanner` n'est pas mémoïsé, donc
+  // l'identité de la callback n'a aucune conséquence.
+  const handleSellerScan = ((code: string) => {
     if (matchesSeller(code)) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showToast('Vendeur identifié ✓', 'success');
@@ -124,9 +137,9 @@ export default function PickupScreen() {
       showToast("Ce n'est pas le bon vendeur. Vérifiez avec lui, ou entrez le code manuellement.", 'error');
       resetScanner();
     }
-  }, [mission.id, mission.seller.qrCode]);
+  });
 
-  const handlePackageScan = useCallback((code: string) => {
+  const handlePackageScan = ((code: string) => {
     if (matchesPackage(code)) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showToast('Colis vérifié ✓', 'success');
@@ -146,7 +159,7 @@ export default function PickupScreen() {
         resetScanner();
       }
     }
-  }, [mission.id, mission.package.trackingNumber, packageAttempts]);
+  });
 
   // ─── DEV BYPASS — skips validation entirely ───────────────
   // TODO(backend): remove before production
