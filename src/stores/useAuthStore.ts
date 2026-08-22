@@ -29,16 +29,11 @@
 // `user_roles.status = 'active'`, que seul le support pose via `trancher_role()`.
 // C'est tout l'objet de la migration `20260822230000`.
 import { create } from 'zustand';
-import type {
-  TransporterProfile,
-  ProfileData,
-  ConventionAcceptance,
-  ConventionAcceptanceInput,
-} from '@/types/user';
+import type { TransporterProfile, ProfileData, ConventionAcceptance } from '@/types/user';
 import { storage, StorageKeys, getStoredJSON, setStoredJSON } from '@/services/storage';
-import { CONVENTION_TRANSPORTEUR_VERSION } from '@/constants/ConventionTransporteur';
 import { requireClerk, peekClerk } from '@/lib/clerkBridge';
 import { supabase } from '@/lib/supabase';
+import { chargerMaConvention, signerConvention } from '@/services/convention';
 
 type TransporterStatus = 'active' | 'offline';
 
@@ -61,18 +56,20 @@ interface AuthState {
   completeProfile: (data: ProfileData) => Promise<void>;
   /** Relit le profil et l'état du rôle depuis la base. */
   rafraichir: () => Promise<void>;
-  // ⚠️ CES DEUX-LÀ ÉCRIVENT ENCORE EN LOCAL, ET C'EST UNE DETTE NOMMÉE.
-  // `public.convention_acceptances` existe et est bien conçue — `iban_tail`
-  // masqué, `stripe_external_account_id` pour le jeton, JAMAIS l'IBAN en clair.
-  // Trois choses manquent avant de pouvoir y écrire : un bucket pour la
-  // signature (aucun n'accepte l'écriture d'un client), la table à passer en
-  // insertion seule (sa policy est `for all`, donc un signataire peut réécrire
-  // ce qu'il a signé), et le compte externe Stripe. Les brancher à moitié
-  // fabriquerait un dossier légal incomplet — pire que pas de dossier.
-  // En attendant : l'IBAN reste en clair dans AsyncStorage. C'est le défaut,
-  // il est connu, il part au commit suivant.
-  saveConventionAcceptance: (input: ConventionAcceptanceInput) => Promise<void>;
-  saveIban: (iban: string) => Promise<void>;
+  /**
+   * Signe la convention : le tracé part dans le stockage, l'acceptation en base.
+   *
+   * 🔴 IL N'Y A PLUS DE `saveIban`. On ne demande plus de coordonnées
+   * bancaires du tout — le compte de versement s'ouvrira chez Stripe, sur sa
+   * page hébergée, comme pour un vendeur de la place de marché. L'IBAN
+   * traînait jusqu'ici EN CLAIR dans AsyncStorage : on retire le besoin plutôt
+   * que de protéger le secret.
+   */
+  signerLaConvention: (input: {
+    representant: string;
+    trace: string;
+    prelevementAutorise: boolean;
+  }) => Promise<void>;
   setTransporterStatus: (status: TransporterStatus) => void;
   toggleOnline: () => void;
   logout: () => Promise<void>;
@@ -100,7 +97,11 @@ type RoleRow = { role: string; status: string };
  * Clerk et le premier appel, `app.uid()` rend NULL et TOUTE policy refuse en
  * silence — un écran vide sans message d'erreur.
  */
-async function chargerProfil(): Promise<{ profil: ProfilRow; roles: RoleRow[] }> {
+async function chargerProfil(): Promise<{
+  profil: ProfilRow;
+  roles: RoleRow[];
+  convention: ConventionAcceptance | null;
+}> {
   const { data, error } = await supabase.rpc('ensure_profile');
   if (error) throw new Error(error.message);
   const profil = (Array.isArray(data) ? data[0] : data) as ProfilRow | null;
@@ -112,7 +113,14 @@ async function chargerProfil(): Promise<{ profil: ProfilRow; roles: RoleRow[] }>
     .from('user_roles')
     .select('role, status');
   if (erreurRoles) throw new Error(erreurRoles.message);
-  return { profil, roles: (r ?? []) as RoleRow[] };
+
+  // 🔴 LA CONVENTION VIENT DE LA BASE, PLUS D'ASYNCSTORAGE. Rangée localement,
+  // elle disparaissait à la déconnexion et ne pouvait être produite par
+  // personne d'autre que ce téléphone — c'est-à-dire jamais, au moment où un
+  // litige la réclame.
+  const convention = await chargerMaConvention();
+
+  return { profil, roles: (r ?? []) as RoleRow[], convention };
 }
 
 /**
@@ -127,6 +135,7 @@ function versProfil(
   profil: ProfilRow,
   roles: RoleRow[],
   precedent: TransporterProfile | null,
+  convention: ConventionAcceptance | null = null,
 ): TransporterProfile {
   const roleTransporteur = roles.find((r) => r.role === 'transporter');
   return {
@@ -146,7 +155,7 @@ function versProfil(
     favoriteHubs: precedent?.favoriteHubs ?? [],
     documentsVerified: roleTransporteur?.status === 'active',
     city: profil.city ?? undefined,
-    convention: precedent?.convention,
+    convention: convention ?? precedent?.convention,
   };
 }
 
@@ -188,9 +197,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
     try {
-      const { profil, roles } = await chargerProfil();
+      const { profil, roles, convention } = await chargerProfil();
       const precedent = getStoredJSON<TransporterProfile>(StorageKeys.USER);
-      const user = versProfil(profil, roles, precedent);
+      const user = versProfil(profil, roles, precedent, convention);
       setStoredJSON(StorageKeys.USER, user);
       set({
         user,
@@ -279,8 +288,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       await clerk.setActive({ session: sessionId });
 
-      const { profil, roles } = await chargerProfil();
-      const user = versProfil(profil, roles, null);
+      const { profil, roles, convention } = await chargerProfil();
+      const user = versProfil(profil, roles, null, convention);
       setStoredJSON(StorageKeys.USER, user);
       storage.set(StorageKeys.IS_ONBOARDED, true);
       fluxCourant = null;
@@ -331,11 +340,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       if (erreurRole) throw new Error(erreurRole.message);
 
-      const { profil, roles } = await chargerProfil();
+      const { profil, roles, convention } = await chargerProfil();
       const user = versProfil(profil, roles, {
         ...courant,
         transportTypes: [data.transportType],
-      });
+      }, convention);
       setStoredJSON(StorageKeys.USER, user);
       set({ user, isAuthenticated: true, isNewUser: false, isLoading: false });
     } catch (e) {
@@ -354,8 +363,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   rafraichir: async () => {
     if (!peekClerk()?.session) return;
     try {
-      const { profil, roles } = await chargerProfil();
-      const user = versProfil(profil, roles, get().user);
+      const { profil, roles, convention } = await chargerProfil();
+      const user = versProfil(profil, roles, get().user, convention);
       setStoredJSON(StorageKeys.USER, user);
       set({ user, isAuthenticated: true });
     } catch (e) {
@@ -363,47 +372,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  // ── LA DETTE NOMMÉE PLUS HAUT ──────────────────────────────────────────────
-  // Inchangées par rapport à la version d'origine, délibérément : on ne
-  // construit pas un dossier légal à moitié.
-
-  saveConventionAcceptance: async (input) => {
+  signerLaConvention: async (input) => {
     set({ isLoading: true });
-    const acceptance: ConventionAcceptance = {
-      version: CONVENTION_TRANSPORTEUR_VERSION,
-      representative: input.representative.trim(),
-      iban: input.iban.replace(/\s/g, '').toUpperCase(),
-      wantsBankTransfer: input.wantsBankTransfer,
-      debitAuthorized: input.debitAuthorized,
-      signatureData: input.signatureData,
-      acceptedAt: new Date().toISOString(),
-    };
-    setStoredJSON(StorageKeys.CONVENTION_ACCEPTANCE, acceptance);
-    const courant = get().user;
-    if (courant) {
-      const maj: TransporterProfile = { ...courant, convention: acceptance };
+    try {
+      const courant = get().user;
+      if (!courant) throw new Error('aucune session');
+      const signee = await signerConvention({
+        profilId: courant.id,
+        representant: input.representant,
+        trace: input.trace,
+        prelevementAutorise: input.prelevementAutorise,
+      });
+      const maj: TransporterProfile = { ...courant, convention: signee };
       setStoredJSON(StorageKeys.USER, maj);
       set({ user: maj, isLoading: false });
-    } else {
+    } catch (e) {
       set({ isLoading: false });
-    }
-  },
-
-  saveIban: async (iban) => {
-    set({ isLoading: true });
-    const courant = get().user;
-    if (courant?.convention) {
-      const convention: ConventionAcceptance = {
-        ...courant.convention,
-        iban: iban.replace(/\s/g, '').toUpperCase(),
-        wantsBankTransfer: true,
-      };
-      const maj: TransporterProfile = { ...courant, convention };
-      setStoredJSON(StorageKeys.USER, maj);
-      setStoredJSON(StorageKeys.CONVENTION_ACCEPTANCE, convention);
-      set({ user: maj, isLoading: false });
-    } else {
-      set({ isLoading: false });
+      throw e;
     }
   },
 

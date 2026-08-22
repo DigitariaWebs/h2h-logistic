@@ -22,7 +22,6 @@ type Target =
   | '/(auth)'
   | '/(auth)/complete-profile'
   | '/(auth)/convention'
-  | '/(auth)/iban'
   | '/(auth)/pending-validation'
   | '/(tabs)';
 
@@ -72,7 +71,11 @@ export default function SplashScreen() {
       // support, donc l'attente serait éternelle.
       else if (!user?.firstName) setTarget('/(auth)/complete-profile');
       else if (!user.convention) setTarget('/(auth)/convention');
-      else if (!user.convention.iban) setTarget('/(auth)/iban');
+      // 🔴 L'ÉTAPE IBAN A DISPARU DE LA CHAÎNE. On ne demande plus de
+      // coordonnées bancaires : elles étaient rangées EN CLAIR dans
+      // AsyncStorage, et elles n'ont jamais eu à passer par nous. Le compte de
+      // versement s'ouvrira chez Stripe, sur sa page hébergée, comme pour un
+      // vendeur de la place de marché.
       else if (!user.documentsVerified) setTarget('/(auth)/pending-validation');
       else setTarget('/(tabs)');
     })();

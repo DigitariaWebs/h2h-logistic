@@ -56,10 +56,12 @@ export default function ConventionScreen() {
   const { colors } = useColorScheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { saveConventionAcceptance, isLoading, user } = useAuthStore();
+  const { signerLaConvention, isLoading, user } = useAuthStore();
 
   const [state, setState] = useState<ConventionState>(initialState);
   const [signing, setSigning] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState('');
   const conventionScrollRef = useRef<ScrollView>(null);
 
   const handleConventionScroll = (
@@ -90,18 +92,37 @@ export default function ConventionScreen() {
   const allValid =
     state.agreementScrolled && identityOk && authOk && signatureOk;
 
+  // 🔴 LA CONVENTION VA EN BASE, ET LE TRACÉ DANS LE STOCKAGE. Elle vivait dans
+  // AsyncStorage : elle disparaissait à la déconnexion, et personne d'autre que
+  // ce téléphone ne pouvait la produire en cas de litige.
+  //
+  // ⚠️ ET L'ÉCRAN SUIVANT N'EST PLUS L'IBAN. On ne demande plus de coordonnées
+  // bancaires : le compte de versement s'ouvrira chez Stripe, sur sa page
+  // hébergée, quand le versement cotransporteur existera. Un secret qu'on n'a
+  // pas est un secret qu'on ne peut pas perdre.
   const handleSubmit = useCallback(async () => {
-    if (!allValid) return;
+    if (!allValid || envoi) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await saveConventionAcceptance({
-      representative: state.representative,
-      iban: '',
-      wantsBankTransfer: false,
-      debitAuthorized: state.debitAuthorized,
-      signatureData: state.signatureData,
-    });
-    router.replace('/(auth)/iban' as never);
-  }, [allValid, state, saveConventionAcceptance, router]);
+    setErreur('');
+    setEnvoi(true);
+    try {
+      await signerLaConvention({
+        representant: state.representative,
+        trace: state.signatureData,
+        prelevementAutorise: state.debitAuthorized,
+      });
+      router.replace('/(auth)/pending-validation');
+    } catch (e) {
+      // ⚠️ ON NE NAVIGUE PAS SUR UN ÉCHEC. Avancer alors que rien n'est
+      // enregistré donnerait une convention signée qui n'existe nulle part.
+      console.error('[convention] signature non enregistree', e);
+      setErreur(
+        e instanceof Error ? e.message : "Impossible d'enregistrer la convention.",
+      );
+    } finally {
+      setEnvoi(false);
+    }
+  }, [allValid, envoi, state, signerLaConvention, router]);
 
   const signedName =
     state.representative.trim() ||
