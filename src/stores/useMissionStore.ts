@@ -1,8 +1,21 @@
+// LES CO-LIVRAISONS DU COTRANSPORTEUR PARTICULIER.
+//
+// 🔴 LES PROPOSITIONS ET LES MISSIONS VIENNENT DE LA BASE depuis le 22/08/2026.
+// Avant, `loadMockData()` chargeait sept missions inventées : le cotransporteur
+// voyait des propositions que personne ne lui avait faites, pour des colis qui
+// n'existent pas, et « accepter » ne remontait nulle part.
+//
+// ⚠️ CE QUI RESTE LOCAL, ET POURQUOI C'EST DIT ICI. Les scans (`confirmPickup`,
+// `confirmDelivery`) et tout le protocole d'incidents — absences, décisions du
+// support, règlements — ne sont PAS encore persistés. Ils appartiennent aux
+// tranches suivantes : les scans passeront par `record_scan_event`, l'argent par
+// le grand livre. Tant qu'ils ne le sont pas, ils ne modifient que l'écran de ce
+// téléphone : rien de ce qu'ils affichent n'engage la plateforme.
 import { create } from 'zustand';
 import type { Mission, MissionStatus, CancellationReason, OffHubProposal, SupportOutcome } from '@/types/mission';
 import { ACTIVE_STATUSES, COMPLETED_STATUSES } from '@/types/mission';
 import type { DeclarantRole } from '@/types/incident';
-import { mockProposals, mockActiveMissions, mockCompletedMissions } from '@/services/mock/missions';
+import { chargerMissions, accepterMission, refuserMission } from '@/services/missions';
 import { computeSettlement } from '@/utils/settlement';
 import { canCancelFree } from '@/constants/delaysRules';
 
@@ -16,7 +29,6 @@ function samePair(p: SeparatedPair, a: string, b: string): boolean {
   return (p.a === a && p.b === b) || (p.a === b && p.b === a);
 }
 
-const MOCK_SELLER_CONFIRM_DELAY = 5000;
 const MOCK_OFFHUB_ACCEPT_DELAY = 3000;
 const AUTO_COMPLETE_DELAY = 2000;
 
@@ -25,15 +37,17 @@ interface MissionState {
   activeMissions: Mission[];
   completedMissions: Mission[];
   isLoading: boolean;
+  /** Le refus du serveur, tel quel — c'est une règle, pas une panne. */
+  erreur: string | null;
   missions: Mission[];
   /** Users suspended by a support decision (danger confirmé / signalement abusif). */
   suspendedUserIds: string[];
   /** Pairs no longer auto-rematched after a support case (§6). */
   separatedPairs: SeparatedPair[];
 
-  loadMockData: () => void;
+  charger: () => Promise<void>;
   acceptMission: (id: string) => Promise<void>;
-  rejectMission: (id: string) => void;
+  rejectMission: (id: string) => Promise<void>;
   updateMissionStatus: (id: string, status: MissionStatus) => void;
   confirmPickup: (id: string) => void;
   confirmDelivery: (id: string) => void;
@@ -78,65 +92,70 @@ function updateActive(state: MissionState, id: string, updater: (m: Mission) => 
   return { ...newState, missions: rebuildMissions(newState) };
 }
 
+/**
+ * Le tri que la base ne fait pas : une mission tombe dans l'une des trois
+ * listes selon son statut — lui-même projeté depuis l'état du colis.
+ */
+function repartir(missions: Mission[]) {
+  return {
+    proposals: missions.filter((m) => m.status === 'proposal'),
+    activeMissions: missions.filter((m) => ACTIVE_STATUSES.includes(m.status)),
+    completedMissions: missions.filter((m) => COMPLETED_STATUSES.includes(m.status)),
+  };
+}
+
 export const useMissionStore = create<MissionState>((set, get) => ({
   proposals: [],
   activeMissions: [],
   completedMissions: [],
   isLoading: false,
+  erreur: null,
   missions: [],
   suspendedUserIds: [],
   separatedPairs: [],
 
-  loadMockData: () => {
-    // Idempotent: don't overwrite live state once the store has been seeded.
-    // Without this, any screen that calls loadMockData on mount
-    // (dashboard, missions tab, messages tab, pull-to-refresh) would reset
-    // in-progress status transitions like confirmPickup / confirmDelivery.
-    const s = get();
-    if (s.proposals.length > 0 || s.activeMissions.length > 0 || s.completedMissions.length > 0) {
-      return;
+  /**
+   * 🔴 ET ON RECHARGE À CHAQUE FOIS, contrairement à l'ancien `loadMockData`
+   * qui refusait d'écraser l'état une fois amorcé. La raison a disparu avec les
+   * données inventées : les transitions ne vivent plus dans ce store, elles
+   * vivent en base — recharger, c'est se resynchroniser, pas se réinitialiser.
+   */
+  charger: async () => {
+    set({ isLoading: true, erreur: null });
+    try {
+      const missions = await chargerMissions();
+      set({ ...repartir(missions), missions, isLoading: false });
+    } catch (e) {
+      set({
+        isLoading: false,
+        erreur: e instanceof Error ? e.message : 'Co-livraisons indisponibles',
+      });
     }
-    set({
-      proposals: [...mockProposals],
-      activeMissions: [...mockActiveMissions],
-      completedMissions: [...mockCompletedMissions],
-      missions: [...mockProposals, ...mockActiveMissions, ...mockCompletedMissions],
-    });
   },
 
   acceptMission: async (id) => {
-    set({ isLoading: true });
-    await new Promise((r) => setTimeout(r, 600));
-
-    const proposal = get().proposals.find((m) => m.id === id);
-    if (!proposal) { set({ isLoading: false }); return; }
-
-    const sellerTimerEnd = new Date(Date.now() + 20 * 60000).toISOString();
-    const updated: Mission = { ...proposal, status: 'seller_pending', sellerTimerEnd, updatedAt: new Date().toISOString() };
-
-    set((state) => {
-      const newState = {
-        isLoading: false,
-        proposals: state.proposals.filter((m) => m.id !== id),
-        activeMissions: [updated, ...state.activeMissions],
-        completedMissions: state.completedMissions,
-      };
-      return { ...newState, missions: rebuildMissions(newState) };
-    });
-
-    setTimeout(() => {
-      const current = get().activeMissions.find((m) => m.id === id);
-      if (current && current.status === 'seller_pending') {
-        set((state) => updateActive(state, id, (m) => ({ ...m, status: 'group_created', updatedAt: new Date().toISOString() })));
-      }
-    }, MOCK_SELLER_CONFIRM_DELAY);
+    set({ isLoading: true, erreur: null });
+    try {
+      await accepterMission(id);
+    } catch (e) {
+      // ⚠️ LE REFUS DU SERVEUR EST UNE RÈGLE, PAS UNE PANNE : « le delai de
+      // cette proposition est passe », « cette co-livraison n est plus a
+      // prendre ». On le garde tel quel pour que l'écran le montre.
+      set({ isLoading: false, erreur: e instanceof Error ? e.message : 'Acceptation impossible' });
+      throw e;
+    }
+    await get().charger();
   },
 
-  rejectMission: (id) => {
-    set((state) => {
-      const newState = { proposals: state.proposals.filter((m) => m.id !== id), activeMissions: state.activeMissions, completedMissions: state.completedMissions };
-      return { ...newState, missions: rebuildMissions(newState) };
-    });
+  rejectMission: async (id) => {
+    set({ isLoading: true, erreur: null });
+    try {
+      await refuserMission(id);
+    } catch (e) {
+      set({ isLoading: false, erreur: e instanceof Error ? e.message : 'Refus impossible' });
+      throw e;
+    }
+    await get().charger();
   },
 
   updateMissionStatus: (id, status) => {

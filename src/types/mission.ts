@@ -23,9 +23,20 @@ export type CancellationReason =
 
 export interface MissionParticipant {
   id: string;
+  /**
+   * 🔴 LE PSEUDONYME, JAMAIS LE PRÉNOM NI LE NOM. `profiles_self_read` ne laisse
+   * lire que sa propre ligne ; l'identité des autres passe par la vue
+   * `profils_publics`, qui ne porte que l'identité PUBLIQUE.
+   */
   name: string;
   avatar?: string;
-  phone: string;
+  /**
+   * ⚠️ FACULTATIF, ET TOUJOURS ABSENT AUJOURD'HUI. Il était obligatoire tant
+   * que les participants étaient inventés ; aucune vue publique ne rend un
+   * numéro, délibérément — le contact passe par la messagerie de la
+   * plateforme, où il laisse une trace.
+   */
+  phone?: string;
   rating?: number;
   role: 'seller' | 'buyer' | 'transporter';
   isFavorite?: boolean;

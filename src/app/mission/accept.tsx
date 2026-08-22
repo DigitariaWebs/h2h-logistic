@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,14 +41,35 @@ export default function AcceptMissionScreen() {
   const isFavorite = mission.buyer.isFavorite;
   const platformFee = Math.round((mission.price - mission.transporterEarning) * 100) / 100;
 
+  // 🔴 LE SERVEUR REFUSE PLUS DE CAS QUE CET ÉCRAN N'EN PRÉVOIT : proposition
+  // adressée à quelqu'un d'autre, délai de quinze minutes passé, colis déjà
+  // pris par un autre cotransporteur, trajet complet ou mis en pause, rôle
+  // suspendu depuis l'envoi. On MONTRE le message : sans cela, l'appui reste
+  // sans effet visible et on recommence indéfiniment.
   const handleAccept = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await acceptMission(mission.id);
+    try {
+      await acceptMission(mission.id);
+    } catch (e) {
+      Alert.alert(
+        'Co-livraison non prise',
+        e instanceof Error ? e.message : 'Acceptation impossible',
+      );
+      return;
+    }
     router.replace(`/mission/${mission.id}`);
   };
 
-  const handleReject = () => {
-    rejectMission(mission.id);
+  // ⚠️ REFUSER N'ANNULE RIEN POUR L'ACHETEUR : le colis repart vers un autre
+  // cotransporteur particulier, et le refus est mémorisé pour que la
+  // proposition suivante n'aille pas au même.
+  const handleReject = async () => {
+    try {
+      await rejectMission(mission.id);
+    } catch (e) {
+      Alert.alert('Refus impossible', e instanceof Error ? e.message : 'Refus impossible');
+      return;
+    }
     router.back();
   };
 

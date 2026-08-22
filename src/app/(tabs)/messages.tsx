@@ -32,14 +32,14 @@ export default function MessagesScreen() {
   const { colors } = useColorScheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { getActiveMissions, getCompletedMissions, loadMockData } = useMissionStore();
+  const { getActiveMissions, getCompletedMissions, charger } = useMissionStore();
 
   const [showHistory, setShowHistory] = useState(false);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    loadMockData();
-  }, []);
+    void charger();
+  }, [charger]);
 
   const groups = useMemo<GroupItem[]>(() => {
     const active = getActiveMissions().map((m) => ({ mission: m, completed: false }));

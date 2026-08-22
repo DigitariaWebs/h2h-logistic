@@ -57,13 +57,13 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, transporterStatus, toggleOnline } = useAuthStore();
-  const { missions, loadMockData: loadMissions, getActiveMissions, getPendingMissions, getCompletedMissions } =
+  const { missions, charger: chargerMissions, getActiveMissions, getPendingMissions, getCompletedMissions } =
     useMissionStore();
-  // ⚠️ LES TRAJETS VIENNENT DE LA BASE. Les missions, les gains et l'impact
+  // ⚠️ TRAJETS ET CO-LIVRAISONS VIENNENT DE LA BASE. Les gains et l'impact
   // écologique restent sur leurs données de démonstration — ils seront branchés
-  // avec leurs tranches. Mélanger les deux est le prix de la transition, et il
-  // se voit : le tableau de bord affiche des trajets réels à côté de
-  // co-livraisons qui ne le sont pas encore.
+  // avec la tranche de l'argent. Mélanger les deux est le prix de la
+  // transition, et il se voit : le tableau de bord affiche des co-livraisons
+  // réelles à côté d'un total de participations qui ne l'est pas encore.
   const { routes, hydrate: chargerTrajets } = useRouteStore();
   const { summary, loadMockData: loadEarnings } = useEarningsStore();
   const {
@@ -102,7 +102,7 @@ export default function HomeScreen() {
     earningsPeriod === 'day' ? 2 : earningsPeriod === 'week' ? 5 : 12;
 
   useEffect(() => {
-    loadMissions();
+    void chargerMissions();
     void chargerTrajets();
     loadEarnings();
     loadEco();
@@ -110,19 +110,19 @@ export default function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    loadMissions();
     loadEarnings();
     loadEco();
-    // ⚠️ SEULS LES TRAJETS FONT UN VRAI ALLER-RETOUR. On attend celui-là plutôt
-    // que de simuler un délai : un « tirer pour rafraîchir » qui s'arrête avant
-    // que la donnée arrive montre l'ancienne liste et laisse croire que rien
-    // n'a changé.
+    // ⚠️ TRAJETS ET CO-LIVRAISONS FONT UN VRAI ALLER-RETOUR ; les gains et
+    // l'impact écologique, pas encore. On attend les deux premiers plutôt que
+    // de simuler un délai : un « tirer pour rafraîchir » qui s'arrête avant que
+    // la donnée arrive montre l'ancienne liste et laisse croire que rien n'a
+    // changé.
     try {
-      await chargerTrajets();
+      await Promise.all([chargerTrajets(), chargerMissions()]);
     } finally {
       setRefreshing(false);
     }
-  }, [chargerTrajets, loadMissions, loadEarnings, loadEco]);
+  }, [chargerTrajets, chargerMissions, loadEarnings, loadEco]);
 
   // FAB animation
   const fabScale = useSharedValue(1);

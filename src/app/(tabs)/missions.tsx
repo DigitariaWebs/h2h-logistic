@@ -21,10 +21,10 @@ export default function MissionsScreen() {
   const { colors } = useColorScheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { loadMockData, getProposals, getActiveMissions, getCompletedMissions } = useMissionStore();
+  const { charger, isLoading, erreur, getProposals, getActiveMissions, getCompletedMissions } = useMissionStore();
   const [tab, setTab] = useState<Tab>('new');
 
-  useEffect(() => { loadMockData(); }, []);
+  useEffect(() => { void charger(); }, [charger]);
 
   const proposals = getProposals();
   const active = getActiveMissions();
@@ -73,9 +73,21 @@ export default function MissionsScreen() {
         })}
       </View>
 
+      {/* 🔴 UN REFUS DE LECTURE N'EST PAS UNE LISTE VIDE. « Aucune co-livraison
+          disponible » sur une requête qui a échoué dit exactement le contraire
+          de ce qui s'est passé — et laisse attendre des propositions qui ne
+          viendront jamais. */}
+      {erreur && (
+        <View style={[styles.erreur, { borderColor: colors.error, backgroundColor: colors.error + '10' }]}>
+          <Text style={[styles.erreurTexte, { color: colors.error }]}>{erreur}</Text>
+        </View>
+      )}
+
       {/* Content */}
       <FlatList
         data={data}
+        refreshing={isLoading}
+        onRefresh={() => { void charger(); }}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
@@ -91,7 +103,7 @@ export default function MissionsScreen() {
           </Animated.View>
         )}
         ListEmptyComponent={
-          tab === 'new' ? (
+          isLoading ? null : tab === 'new' ? (
             <EmptyState iconName="package" title="Aucune co-livraison disponible" description="Restez actif pour recevoir des propositions !" />
           ) : tab === 'active' ? (
             <EmptyState iconName="rocket" title="Aucune co-livraison en cours" description="Acceptez une proposition pour démarrer." />
@@ -276,6 +288,8 @@ function CompletedMissionCard({ mission, colors }: { mission: Mission; colors: a
 // ─── Styles ───────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  erreur: { marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderWidth: 1, borderRadius: BorderRadius.md, padding: Spacing.md },
+  erreurTexte: { ...Typography.caption, lineHeight: 18 },
   screen: { flex: 1 },
   header: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
   title: { ...Typography.h1 },
