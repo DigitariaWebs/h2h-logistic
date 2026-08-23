@@ -48,9 +48,15 @@ interface MissionState {
   charger: () => Promise<void>;
   acceptMission: (id: string) => Promise<void>;
   rejectMission: (id: string) => Promise<void>;
-  updateMissionStatus: (id: string, status: MissionStatus) => void;
-  confirmPickup: (id: string) => void;
-  confirmDelivery: (id: string) => void;
+  // 🔴 `updateMissionStatus`, `confirmPickup` ET `confirmDelivery` ONT DISPARU
+  // LE 22/08/2026. Ils écrivaient un statut de mission à la main — or ce statut
+  // est une PROJECTION de `shipments.state`, forcée par un trigger depuis
+  // `20260822260000`. Ils ne pouvaient donc plus mentir qu'À L'ÉCRAN, en
+  // affichant une remise que la base ignore : exactement le mensonge que la
+  // projection existe pour empêcher, réintroduit côté client.
+  //
+  // ⚠️ CE QUI FAIT AVANCER UN COLIS, DÉSORMAIS : un scan
+  // (`services/scans.ts` → `record_scan_event`), puis un `charger()`.
   cancelMission: (id: string, reason: CancellationReason) => void;
   reportSellerAbsence: (id: string) => void;
   reportBuyerAbsence: (id: string, extend?: boolean) => void;
@@ -156,34 +162,6 @@ export const useMissionStore = create<MissionState>((set, get) => ({
       throw e;
     }
     await get().charger();
-  },
-
-  updateMissionStatus: (id, status) => {
-    set((state) => {
-      const now = new Date().toISOString();
-      const updateInList = (list: Mission[]) => list.map((m) => (m.id === id ? { ...m, status, updatedAt: now } : m));
-      const updatedActive = updateInList(state.activeMissions);
-      const updatedProposals = updateInList(state.proposals);
-      const newlyCompleted = updatedActive.filter((m) => m.id === id && COMPLETED_STATUSES.includes(m.status));
-      const remainingActive = newlyCompleted.length > 0 ? updatedActive.filter((m) => m.id !== id) : updatedActive;
-      const newState = { proposals: updatedProposals, activeMissions: remainingActive, completedMissions: [...newlyCompleted, ...state.completedMissions] };
-      return { ...newState, missions: rebuildMissions(newState) };
-    });
-  },
-
-  confirmPickup: (id) => {
-    const now = new Date().toISOString();
-    set((state) => updateActive(state, id, (m) => ({
-      ...m, status: 'picked_up' as MissionStatus, updatedAt: now, pickupHub: { ...m.pickupHub, actualTime: now },
-    })));
-  },
-
-  confirmDelivery: (id) => {
-    const now = new Date().toISOString();
-    set((state) => updateActive(state, id, (m) => ({
-      ...m, status: 'delivered' as MissionStatus, updatedAt: now, deliveryHub: { ...m.deliveryHub, actualTime: now },
-    })));
-    setTimeout(() => { get().updateMissionStatus(id, 'completed'); }, AUTO_COMPLETE_DELAY);
   },
 
   cancelMission: (id, reason) => {

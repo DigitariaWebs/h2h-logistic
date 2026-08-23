@@ -79,6 +79,14 @@ export type SupportOutcome = 'danger_confirmed' | 'good_faith' | 'abusive';
 
 export interface Mission {
   id: string;
+  /**
+   * 🔴 L'IDENTIFIANT DE L'EXPÉDITION, ET IL EST DISTINCT DE `id`.
+   * Tous les scans portent sur le COLIS (`shipments`), pas sur la mission :
+   * `record_scan_event`, `constater_absence` et le chemin des photos de garde
+   * (`{shipment_id}/…`, lu par la policy du bucket) l'attendent. Il vivait
+   * caché dans `package.id` — un endroit où personne ne va le chercher.
+   */
+  shipmentId: string;
   routeId: string;
   status: MissionStatus;
   seller: MissionParticipant;

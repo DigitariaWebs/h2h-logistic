@@ -27,6 +27,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useMissionStore } from '@/stores/useMissionStore';
 import { mockHubs } from '@/services/mock/hubs';
 import { isAfterTolerance, getToleranceWindow } from '@/utils/tolerance';
+import { enregistrerScan, messageDeScan, nouvelleCle } from '@/services/scans';
 
 // 🔴 « presence » EST LA PREMIÈRE PAGE DEPUIS LE 12/08/2026 (demande client).
 // C'est elle qui s'ouvre sous « ACTION SUIVANTE », et c'est la MÊME que celle
@@ -47,7 +48,7 @@ export default function PickupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getMissionById, confirmPickup, updateMissionStatus } = useMissionStore();
+  const { getMissionById, charger } = useMissionStore();
 
   const mission = getMissionById(id ?? '');
   // ⚠️ HORS HUB, ON SAUTE LA PAGE 1 : un rendez-vous hors hub n'a ni zone ni
@@ -59,6 +60,7 @@ export default function PickupScreen() {
   const [scannerResetSignal, setScannerResetSignal] = useState(0);
   const [packageAttempts, setPackageAttempts] = useState(0);
   const [locked, setLocked] = useState(false);
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
   // Récupération : la présence au hub se valide AVANT le scan (demande client —
   // différence avec la remise qui va directement au scan).
   const [presenceValidated, setPresenceValidated] = useState(false);
@@ -101,82 +103,100 @@ export default function PickupScreen() {
 
   const resetScanner = () => setScannerResetSignal((n) => n + 1);
 
-  const matchesSeller = (code: string): boolean => {
-    const normalized = code.trim().toUpperCase();
-    return (
-      !!mission.seller.qrCode && normalized === mission.seller.qrCode.toUpperCase()
-    ) || normalized.includes(mission.id.toUpperCase()) || normalized.startsWith('SEL-') || normalized.startsWith('HTH-');
-  };
-
-  const matchesPackage = (code: string): boolean => {
-    const normalized = code.trim().toUpperCase();
-    return !!mission.package.trackingNumber && normalized === mission.package.trackingNumber.toUpperCase();
-  };
-
-  // 🔴 CES DEUX-LÀ ÉTAIENT DES `useCallback`, ET C'ÉTAIT UN PLANTAGE EN ATTENTE.
-  // Ils sont déclarés APRÈS le `if (!mission) return` du dessus : le nombre de
-  // hooks changeait donc d'un rendu à l'autre, et React lève « Rendered more
-  // hooks than during the previous render » dès que `mission` passe de nul à
-  // présent — c'est-à-dire au moment précis où l'écran devient utile.
+  // 🔴 `matchesSeller()` ET `matchesPackage()` ONT DISPARU, ET C'EST L'OBJET
+  // MÊME DE CETTE TRANCHE. Le premier acceptait N'IMPORTE QUEL code commençant
+  // par `SEL-` ou `HTH-` — c'est-à-dire l'étiquette que le cotransporteur tient
+  // déjà en main. Et de toute façon, un contrôle qui vit sur le téléphone n'est
+  // pas un contrôle : deux boutons de développement, juste en dessous, le
+  // sautaient en entier.
   //
-  // ⚠️ ÇA NE SE VOYAIT QUE PAR INTERMITTENCE tant que les missions venaient
-  // d'un tableau en mémoire, déjà rempli au montage. Avec la base, elles
-  // arriveront TOUJOURS de façon asynchrone : le plantage passerait de « parfois »
-  // à « à chaque ouverture ».
+  // 🔴 LA COMPARAISON EST EN BASE (`20260822270000`). On n'envoie plus un
+  // verdict, on envoie un CODE — et c'est `record_scan_event` qui dit s'il est
+  // le bon.
   //
-  // ⚠️ DES FONCTIONS SIMPLES SUFFISENT : `QRScanner` n'est pas mémoïsé, donc
-  // l'identité de la callback n'a aucune conséquence.
-  const handleSellerScan = ((code: string) => {
-    if (matchesSeller(code)) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast('Vendeur identifié ✓', 'success');
-      AccessibilityInfo.announceForAccessibility('Vendeur identifié. Étape 2 sur 2 : scanner le colis.');
-      setTimeout(() => setStep('scan-package'), 400);
-    } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      showToast("Ce n'est pas le bon vendeur. Vérifiez avec lui, ou entrez le code manuellement.", 'error');
-      resetScanner();
-    }
-  });
-
-  const handlePackageScan = ((code: string) => {
-    if (matchesPackage(code)) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast('Colis vérifié ✓', 'success');
-      confirmPickup(mission.id);
-      AccessibilityInfo.announceForAccessibility('Colis vérifié. Prise en charge confirmée.');
-      setStep('confirmed');
-      checkScale.value = withSpring(1, { damping: 12, stiffness: 150 });
-    } else {
-      const next = packageAttempts + 1;
-      setPackageAttempts(next);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      if (next >= MAX_PACKAGE_ATTEMPTS) {
-        setLocked(true);
-        showToast("Merci de contacter le support via le chat.", 'error');
+  // ⚠️ ET LA BASE EXIGE DEUX CHOSES : le bon code, ET la preuve de la rencontre.
+  // Le passage à `picked_up` n'est ouvert qu'après un scan vendeur RÉUSSI ;
+  // scanner l'étiquette seule rend `no_eligible`.
+  //
+  // ⚠️ CES DEUX-LÀ ÉTAIENT DES `useCallback`, déclarés APRÈS le `if (!mission)
+  // return` du dessus : le nombre de hooks changeait d'un rendu à l'autre. Des
+  // fonctions simples suffisent — `QRScanner` n'est pas mémoïsé.
+  const handleSellerScan = (async (code: string) => {
+    if (envoiEnCours) return;
+    setEnvoiEnCours(true);
+    try {
+      const r = await enregistrerScan({
+        shipmentId: mission.shipmentId,
+        genre: 'seller_qr',
+        code,
+        etape: 1,
+        cle: nouvelleCle(`pickup-vendeur-${mission.id}`),
+      });
+      if (r === 'success') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showToast('Vendeur identifié ✓', 'success');
+        AccessibilityInfo.announceForAccessibility('Vendeur identifié. Étape 2 sur 2 : scanner le colis.');
+        setTimeout(() => setStep('scan-package'), 400);
       } else {
-        showToast("Ce colis ne correspond pas à la co-livraison. Pouvez-vous vérifier avec le vendeur ?", 'error');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        showToast(messageDeScan(r, 'seller_qr'), 'error');
         resetScanner();
       }
+    } catch (e) {
+      // 🔴 LE REFUS DU SERVEUR EST UNE RÈGLE, PAS UNE PANNE : « cette expedition
+      // ne vous concerne pas », « le role declare n est pas le votre ».
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showToast(e instanceof Error ? e.message : 'Scan impossible', 'error');
+      resetScanner();
+    } finally {
+      setEnvoiEnCours(false);
     }
   });
 
-  // ─── DEV BYPASS — skips validation entirely ───────────────
-  // TODO(backend): remove before production
-  const bypassSellerStep = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    showToast('Vendeur identifié ✓ (bypass)', 'success');
-    setTimeout(() => setStep('scan-package'), 300);
-  };
-
-  // TODO(backend): remove before production
-  const bypassPackageStep = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    showToast('Colis vérifié ✓ (bypass)', 'success');
-    confirmPickup(mission.id);
-    setStep('confirmed');
-    checkScale.value = withSpring(1, { damping: 12, stiffness: 150 });
-  };
+  const handlePackageScan = (async (code: string) => {
+    if (envoiEnCours) return;
+    setEnvoiEnCours(true);
+    try {
+      const r = await enregistrerScan({
+        shipmentId: mission.shipmentId,
+        genre: 'tracking_qr',
+        code,
+        etape: 2,
+        // ⚠️ C'EST CE SCAN-CI QUI FAIT AVANCER LE COLIS, et seulement lui : le
+        // scan du vendeur identifie, il ne transporte pas.
+        versEtat: 'picked_up',
+        hubId: mission.pickupHub.id || null,
+        cle: nouvelleCle(`pickup-colis-${mission.id}`),
+      });
+      if (r === 'success') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showToast('Colis vérifié ✓', 'success');
+        AccessibilityInfo.announceForAccessibility('Colis vérifié. Prise en charge confirmée.');
+        setStep('confirmed');
+        checkScale.value = withSpring(1, { damping: 12, stiffness: 150 });
+        // ⚠️ ON RELIT LA MISSION : son statut est une PROJECTION de l'état du
+        // colis, que la base vient de faire avancer.
+        void charger();
+      } else {
+        const next = packageAttempts + 1;
+        setPackageAttempts(next);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        if (next >= MAX_PACKAGE_ATTEMPTS) {
+          setLocked(true);
+          showToast('Merci de contacter le support via le chat.', 'error');
+        } else {
+          showToast(messageDeScan(r, 'tracking_qr'), 'error');
+          resetScanner();
+        }
+      }
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showToast(e instanceof Error ? e.message : 'Scan impossible', 'error');
+      resetScanner();
+    } finally {
+      setEnvoiEnCours(false);
+    }
+  });
 
   const hubCard = (
     /* Fiche hub — nom, ADRESSE et HORAIRES, comme sur la marketplace.
@@ -399,8 +419,6 @@ export default function PickupScreen() {
           onScan={handleSellerScan}
           onManualEntry={handleSellerScan}
           resetSignal={scannerResetSignal}
-          // TODO(backend): remove before production
-          onDevBypass={bypassSellerStep}
         />
         {toast && (
           <Toast message={toast.msg} type={toast.type} visible onHide={() => setToast(null)} duration={3000} />
@@ -478,8 +496,6 @@ export default function PickupScreen() {
           onScan={handlePackageScan}
           onManualEntry={handlePackageScan}
           resetSignal={scannerResetSignal}
-          // TODO(backend): remove before production
-          onDevBypass={bypassPackageStep}
         />
         {toast && (
           <Toast message={toast.msg} type={toast.type} visible onHide={() => setToast(null)} duration={3000} />
@@ -535,8 +551,28 @@ export default function PickupScreen() {
       <View style={[s.footer, { paddingBottom: insets.bottom + Spacing.lg }]}>
         <Button
           title="Continuer vers la co-livraison"
-          onPress={() => {
-            updateMissionStatus(mission.id, 'in_transit');
+          // ⚠️ « JE PARS » EST UN ÉVÉNEMENT, PAS UN CHANGEMENT D'ÉCRAN. Ce
+          // bouton écrivait `in_transit` dans un magasin en mémoire : le colis
+          // restait « récupéré » en base, et l'acheteur ne voyait jamais qu'il
+          // était en route.
+          //
+          // ⚠️ GENRE `system` FAUTE DE MIEUX : le départ ne se scanne pas, il se
+          // déclare. `handoff_kind` n'a pas de valeur « depart » ; `system` est
+          // le seul genre sans code, donc le seul que la base accepte sans
+          // comparer quoi que ce soit.
+          onPress={async () => {
+            try {
+              await enregistrerScan({
+                shipmentId: mission.shipmentId,
+                genre: 'system',
+                versEtat: 'in_transit',
+                cle: nouvelleCle(`depart-${mission.id}`),
+              });
+              void charger();
+            } catch (e) {
+              showToast(e instanceof Error ? e.message : 'Départ non enregistré', 'error');
+              return;
+            }
             router.back();
           }}
           variant="gradient"

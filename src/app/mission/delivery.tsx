@@ -27,6 +27,7 @@ import { useRouteStore } from '@/stores/useRouteStore';
 import { useEcoImpactStore } from '@/stores/useEcoImpactStore';
 import { isAfterTolerance, getToleranceWindow } from '@/utils/tolerance';
 import { calculateCo2Saved, estimateDistanceKm } from '@/utils/carbon';
+import { enregistrerScan, messageDeScan, nouvelleCle } from '@/services/scans';
 
 type DeliveryStep = 'approach' | 'scan-buyer' | 'scan-package' | 'confirmed';
 
@@ -37,7 +38,7 @@ export default function DeliveryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getMissionById, confirmDelivery } = useMissionStore();
+  const { getMissionById, charger } = useMissionStore();
   const { routes } = useRouteStore();
   const { registerDelivery } = useEcoImpactStore();
 
@@ -47,6 +48,7 @@ export default function DeliveryScreen() {
   const [scannerResetSignal, setScannerResetSignal] = useState(0);
   const [packageAttempts, setPackageAttempts] = useState(0);
   const [locked, setLocked] = useState(false);
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
   const [proximity] = useState(180);
   // 🔴 BATTEMENT DE 10 s — IL FAIT VIVRE LA RÈGLE D'ABSENCE, exactement comme
   // à la récupération. Sans lui, le cotransporteur particulier qui ATTEND
@@ -79,18 +81,6 @@ export default function DeliveryScreen() {
   const showToast = (msg: string, type: 'success' | 'warning' | 'error' = 'success') => setToast({ msg, type });
   const resetScanner = () => setScannerResetSignal((n) => n + 1);
 
-  const matchesBuyer = (code: string): boolean => {
-    const normalized = code.trim().toUpperCase();
-    return (
-      !!mission.buyer.qrCode && normalized === mission.buyer.qrCode.toUpperCase()
-    ) || normalized.includes(mission.id.toUpperCase()) || normalized.startsWith('BUY-') || normalized.startsWith('HTH-');
-  };
-
-  const matchesPackage = (code: string): boolean => {
-    const normalized = code.trim().toUpperCase();
-    return !!mission.package.trackingNumber && normalized === mission.package.trackingNumber.toUpperCase();
-  };
-
   const runEarningsCounter = () => {
     const target = mission.transporterEarning;
     const duration = 1500;
@@ -105,77 +95,97 @@ export default function DeliveryScreen() {
     setTimeout(tick, 600);
   };
 
-  // 🔴 MÊME PLANTAGE EN ATTENTE QUE DANS `pickup.tsx`, et pour la même raison :
-  // ces deux `useCallback` sont déclarés APRÈS le `if (!mission) return`, donc
-  // le nombre de hooks changeait d'un rendu à l'autre. React lève « Rendered
-  // more hooks than during the previous render » dès que la mission arrive —
-  // c'est-à-dire au moment où l'écran devient utile. Avec la base, les missions
-  // arriveront TOUJOURS de façon asynchrone.
-  const handleBuyerScan = ((code: string) => {
-    if (matchesBuyer(code)) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast('Acheteur identifié ✓', 'success');
-      AccessibilityInfo.announceForAccessibility('Acheteur identifié. Étape 2 sur 2 : scanner le colis.');
-      setTimeout(() => setStep('scan-package'), 400);
-    } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      showToast("Ce n'est pas l'acheteur de cette co-livraison. Vérifiez le code avec lui.", 'error');
-      resetScanner();
-    }
-  });
-
-  const handlePackageScan = ((code: string) => {
-    if (matchesPackage(code)) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast('Colis vérifié ✓', 'success');
-      confirmDelivery(mission.id);
-      setEarningsReleased(true);
-      const route = routes.find((r) => r.id === mission.routeId);
-      const transportType = route?.transportType ?? 'car';
-      const distanceKm = estimateDistanceKm(mission.pickupHub.city, mission.deliveryHub.city);
-      const kgSaved = calculateCo2Saved(distanceKm, transportType);
-      if (kgSaved > 0) registerDelivery(kgSaved);
-      AccessibilityInfo.announceForAccessibility('Co-livraison confirmée. Paiement en cours de libération.');
-      setStep('confirmed');
-      checkScale.value = withSpring(1, { damping: 12, stiffness: 150 });
-      runEarningsCounter();
-    } else {
-      const next = packageAttempts + 1;
-      setPackageAttempts(next);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      if (next >= MAX_PACKAGE_ATTEMPTS) {
-        setLocked(true);
-        showToast("Besoin d'aide ? Contactez le support via le chat.", 'error');
+  // 🔴 LE TROU QUE CETTE TRANCHE FERME, ET IL ÉTAIT PIRE QU'À LA RÉCUPÉRATION.
+  // `matchesBuyer()` acceptait tout code commençant par `BUY-` ou `HTH-` — donc
+  // l'étiquette du colis, que le cotransporteur PORTE depuis la récupération.
+  // Il pouvait « livrer » chez lui : `delivered_at` se posait, et le versement
+  // du vendeur partait à J+3 +48 h sur un colis que personne n'avait reçu.
+  //
+  // 🔴 LA BASE EXIGE DÉSORMAIS L'IDENTITÉ D'EN FACE (`app.preuve_requise`) : le
+  // passage à `delivered` n'est ouvert qu'après un scan acheteur RÉUSSI.
+  // Scanner l'étiquette seule rend `no_eligible`.
+  //
+  // ⚠️ CES DEUX-LÀ ÉTAIENT DES `useCallback` déclarés APRÈS le `if (!mission)
+  // return` : le nombre de hooks changeait d'un rendu à l'autre.
+  const handleBuyerScan = (async (code: string) => {
+    if (envoiEnCours) return;
+    setEnvoiEnCours(true);
+    try {
+      const r = await enregistrerScan({
+        shipmentId: mission.shipmentId,
+        genre: 'buyer_qr',
+        code,
+        etape: 1,
+        cle: nouvelleCle(`remise-acheteur-${mission.id}`),
+      });
+      if (r === 'success') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showToast('Acheteur identifié ✓', 'success');
+        AccessibilityInfo.announceForAccessibility('Acheteur identifié. Étape 2 sur 2 : scanner le colis.');
+        setTimeout(() => setStep('scan-package'), 400);
       } else {
-        showToast("Ce colis ne correspond pas. Assurez-vous que c'est bien le colis récupéré chez le vendeur.", 'error');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        showToast(messageDeScan(r, 'buyer_qr'), 'error');
         resetScanner();
       }
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showToast(e instanceof Error ? e.message : 'Scan impossible', 'error');
+      resetScanner();
+    } finally {
+      setEnvoiEnCours(false);
     }
   });
 
-  // ─── DEV BYPASS — skips validation entirely ───────────────
-  // TODO(backend): remove before production
-  const bypassBuyerStep = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    showToast('Acheteur identifié ✓ (bypass)', 'success');
-    setTimeout(() => setStep('scan-package'), 300);
-  };
-
-  // TODO(backend): remove before production
-  const bypassPackageStep = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    showToast('Colis vérifié ✓ (bypass)', 'success');
-    confirmDelivery(mission.id);
-    setEarningsReleased(true);
-    const route = routes.find((r) => r.id === mission.routeId);
-    const transportType = route?.transportType ?? 'car';
-    const distanceKm = estimateDistanceKm(mission.pickupHub.city, mission.deliveryHub.city);
-    const kgSaved = calculateCo2Saved(distanceKm, transportType);
-    if (kgSaved > 0) registerDelivery(kgSaved);
-    setStep('confirmed');
-    checkScale.value = withSpring(1, { damping: 12, stiffness: 150 });
-    runEarningsCounter();
-  };
+  const handlePackageScan = (async (code: string) => {
+    if (envoiEnCours) return;
+    setEnvoiEnCours(true);
+    try {
+      const r = await enregistrerScan({
+        shipmentId: mission.shipmentId,
+        genre: 'tracking_qr',
+        code,
+        etape: 2,
+        versEtat: 'delivered',
+        hubId: mission.deliveryHub.id || null,
+        cle: nouvelleCle(`remise-colis-${mission.id}`),
+      });
+      if (r === 'success') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showToast('Colis vérifié ✓', 'success');
+        setEarningsReleased(true);
+        const route = routes.find((r2) => r2.id === mission.routeId);
+        const transportType = route?.transportType ?? 'car';
+        const distanceKm = estimateDistanceKm(mission.pickupHub.city, mission.deliveryHub.city);
+        const kgSaved = calculateCo2Saved(distanceKm, transportType);
+        if (kgSaved > 0) registerDelivery(kgSaved);
+        AccessibilityInfo.announceForAccessibility('Co-livraison confirmée. Paiement en cours de libération.');
+        setStep('confirmed');
+        checkScale.value = withSpring(1, { damping: 12, stiffness: 150 });
+        runEarningsCounter();
+        // ⚠️ ON RELIT : le statut de la mission est une projection de l'état du
+        // colis, que la base vient de faire passer à « livré ».
+        void charger();
+      } else {
+        const next = packageAttempts + 1;
+        setPackageAttempts(next);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        if (next >= MAX_PACKAGE_ATTEMPTS) {
+          setLocked(true);
+          showToast("Besoin d'aide ? Contactez le support via le chat.", 'error');
+        } else {
+          showToast(messageDeScan(r, 'tracking_qr'), 'error');
+          resetScanner();
+        }
+      }
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      showToast(e instanceof Error ? e.message : 'Scan impossible', 'error');
+      resetScanner();
+    } finally {
+      setEnvoiEnCours(false);
+    }
+  });
 
   // ─── STEP: APPROACH ────────────────────────────────────────
   if (step === 'approach') {
@@ -302,8 +312,6 @@ export default function DeliveryScreen() {
           onScan={handleBuyerScan}
           onManualEntry={handleBuyerScan}
           resetSignal={scannerResetSignal}
-          // TODO(backend): remove before production
-          onDevBypass={bypassBuyerStep}
         />
         {toast && (
           <Toast message={toast.msg} type={toast.type} visible onHide={() => setToast(null)} duration={3000} />
@@ -380,8 +388,6 @@ export default function DeliveryScreen() {
           onScan={handlePackageScan}
           onManualEntry={handlePackageScan}
           resetSignal={scannerResetSignal}
-          // TODO(backend): remove before production
-          onDevBypass={bypassPackageStep}
         />
         {toast && (
           <Toast message={toast.msg} type={toast.type} visible onHide={() => setToast(null)} duration={3000} />

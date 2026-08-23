@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -81,16 +81,6 @@ export default function MissionGroupScreen() {
   return <GroupContent mission={mission} colors={colors} router={router} insets={insets} />;
 }
 
-// TODO(backend): remove before production — dev-only demo helper
-const DEMO_STATUS_ORDER: Array<import('@/types/mission').MissionStatus> = [
-  'group_created',
-  'pickup_pending',
-  'picked_up',
-  'in_transit',
-  'delivery_pending',
-  'delivered',
-  'completed',
-];
 
 function GroupContent({ mission, colors, router, insets }: { mission: Mission; colors: any; router: any; insets: any }) {
   // Select actions individually so we don't re-subscribe to the whole state.
@@ -98,9 +88,6 @@ function GroupContent({ mission, colors, router, insets }: { mission: Mission; c
   const reportSellerAbsence = useMissionStore((s) => s.reportSellerAbsence);
   const reportBuyerAbsence = useMissionStore((s) => s.reportBuyerAbsence);
   const proposeOffHub = useMissionStore((s) => s.proposeOffHub);
-  const updateMissionStatus = useMissionStore((s) => s.updateMissionStatus);
-  const confirmPickup = useMissionStore((s) => s.confirmPickup);
-  const confirmDelivery = useMissionStore((s) => s.confirmDelivery);
   const resolveSupportReview = useMissionStore((s) => s.resolveSupportReview);
   const separatedPairs = useMissionStore((s) => s.separatedPairs);
   const { t } = useTranslation();
@@ -132,6 +119,19 @@ function GroupContent({ mission, colors, router, insets }: { mission: Mission; c
 
   const activePartyData = activeParty === 'seller' ? mission.seller : activeParty === 'buyer' ? mission.buyer : null;
 
+  // Un battement par seconde, pour le compte à rebours ci-dessous.
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ⚠️ CE LIBELLÉ EST UN COMPTE À REBOURS, ET IL NE COMPTAIT PAS. Le `useMemo`
+  // ne dépendait que des heures de rendez-vous — c'est-à-dire de rien qui
+  // change : « Prise en charge dans 01h23 » restait affiché tel quel pendant
+  // qu'on regardait l'écran. Tant que la plus petite unité était la minute,
+  // l'immobilité passait ; avec les secondes elle serait devenue criante.
+  // `nowTick` remet donc le calcul en marche, une fois par seconde.
   const activePhaseLabel = useMemo(() => {
     if (!activeParty) return '';
     const targetTime = activeParty === 'seller' ? mission.pickupHub.scheduledTime : mission.deliveryHub.scheduledTime;
@@ -139,12 +139,15 @@ function GroupContent({ mission, colors, router, insets }: { mission: Mission; c
     const prefix = activeParty === 'seller' ? 'Prise en charge' : 'Co-livraison';
 
     if (diffMs <= 0) return `${prefix} — rendez-vous maintenant`;
-    const totalMinutes = Math.floor(diffMs / 60000);
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    const duration = h > 0 ? `${String(h).padStart(2, '0')}h${String(m).padStart(2, '0')}` : `${m} min`;
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const sec = totalSeconds % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const duration = h > 0 ? `${pad(h)}h${pad(m)}m${pad(sec)}s` : `${m} min ${pad(sec)} s`;
     return `${prefix} dans ${duration}`;
-  }, [activeParty, mission.pickupHub.scheduledTime, mission.deliveryHub.scheduledTime]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeParty, mission.pickupHub.scheduledTime, mission.deliveryHub.scheduledTime, nowTick]);
 
   const handleOpenChat = (party: MissionParticipant, role: 'seller' | 'buyer') => {
     router.push({
@@ -519,39 +522,13 @@ function GroupContent({ mission, colors, router, insets }: { mission: Mission; c
           <Text style={[gs.cancelText, { color: colors.error }]}>Annuler la co-livraison</Text>
         </TouchableOpacity>
 
-        {/* TODO(backend): remove before production — dev-only phase walker */}
-        {__DEV__ && (
-          <View style={gs.devBar}>
-            <Text style={gs.devLabel}>DEV · Statut actuel : {mission.status}</Text>
-            <View style={gs.devBtnRow}>
-              <TouchableOpacity
-                style={[gs.devBtn, { backgroundColor: '#F5A623' }]}
-                onPress={() => {
-                  const currentIdx = DEMO_STATUS_ORDER.indexOf(mission.status);
-                  const nextIdx = Math.min(currentIdx + 1, DEMO_STATUS_ORDER.length - 1);
-                  const nextStatus = DEMO_STATUS_ORDER[nextIdx];
-                  if (nextStatus === 'picked_up') {
-                    confirmPickup(mission.id);
-                  } else if (nextStatus === 'delivered') {
-                    confirmDelivery(mission.id);
-                  } else {
-                    updateMissionStatus(mission.id, nextStatus);
-                  }
-                }}
-                accessibilityLabel="Dev: advance to next phase"
-              >
-                <Text style={gs.devBtnText}>Étape suivante →</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[gs.devBtn, { backgroundColor: 'rgba(245,166,35,0.25)', borderWidth: 1, borderColor: '#F5A623' }]}
-                onPress={() => updateMissionStatus(mission.id, 'group_created')}
-                accessibilityLabel="Dev: reset to first phase"
-              >
-                <Text style={[gs.devBtnText, { color: '#F5A623' }]}>Reset</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+        {/* 🔴 LE MARCHEUR DE PHASES A ÉTÉ RETIRÉ LE 22/08/2026. Il faisait
+            avancer le statut de la mission d'un cran par appui — jusqu'à
+            « livré ». Depuis `20260822260000`, ce statut est une PROJECTION de
+            l'état du colis, forcée par un trigger : le bouton n'aurait plus
+            menti qu'À L'ÉCRAN, en affichant une remise que la base ignore.
+            C'est précisément le mensonge que la projection existe pour
+            empêcher, réintroduit côté client. */}
       </ScrollView>
 
       <OffHubProposalSheet visible={showOffHub} onClose={() => setShowOffHub(false)} onSend={handleOffHub} pickupHubName={mission.pickupHub.name} deliveryHubName={mission.deliveryHub.name} />

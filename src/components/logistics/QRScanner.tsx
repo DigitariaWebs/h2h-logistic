@@ -24,13 +24,12 @@ interface QRScannerProps {
   mode?: ScannerMode;
   instruction?: string;
   resetSignal?: number;
-  /**
-   * TODO(backend): remove before production.
-   * Dev-only shortcut that fires the expected valid payload for the current
-   * scanner mode, letting the team run through the flow without a physical
-   * QR code. Only rendered when `__DEV__` is true AND this prop is provided.
-   */
-  onDevBypass?: () => void;
+  // 🔴 `onDevBypass` A ÉTÉ RETIRÉ LE 22/08/2026. C'était un bouton qui sautait
+  // le scan en entier — donc toute la preuve de garde du colis — et il ne
+  // dépendait que de `__DEV__`, c'est-à-dire du type de build, pas d'un réglage
+  // qu'on puisse vérifier avant publication. Depuis `20260822270000`, la base
+  // COMPARE le code présenté : un raccourci client ne pourrait de toute façon
+  // plus rien faire avancer, mais il continuerait d'afficher un faux succès.
 }
 
 const COPY: Record<ScannerMode, { instruction: string; subtitle: string; manualTitle: string; manualSub: string; manualLabel: string; manualPlaceholder: string }> = {
@@ -60,7 +59,7 @@ const COPY: Record<ScannerMode, { instruction: string; subtitle: string; manualT
   },
 };
 
-export function QRScanner({ onScan, onManualEntry, mode = 'seller-qr', instruction, resetSignal, onDevBypass }: QRScannerProps) {
+export function QRScanner({ onScan, onManualEntry, mode = 'seller-qr', instruction, resetSignal }: QRScannerProps) {
   const { colors } = useColorScheme();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -220,20 +219,6 @@ export function QRScanner({ onScan, onManualEntry, mode = 'seller-qr', instructi
           <Text style={styles.manualLink}>Entrer le code manuellement</Text>
         </TouchableOpacity>
 
-        {/* TODO(backend): remove before production — dev-only bypass */}
-        {__DEV__ && onDevBypass && (
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onDevBypass();
-            }}
-            style={styles.devBypassBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Dev bypass scan (à retirer en production)"
-          >
-            <Text style={styles.devBypassText}>DEV · Bypass scan</Text>
-          </TouchableOpacity>
-        )}
       </View>
     </View>
   );
@@ -268,22 +253,6 @@ const styles = StyleSheet.create({
   controls: { position: 'absolute', bottom: 40, left: 0, right: 0, alignItems: 'center', gap: Spacing.lg },
   flashBtn: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   manualLink: { ...Typography.captionMedium, color: 'rgba(255,255,255,0.7)', textDecorationLine: 'underline' },
-
-  // Dev-only bypass — remove before production.
-  devBypassBtn: {
-    marginTop: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: '#F5A623',
-    backgroundColor: 'rgba(245, 166, 35, 0.18)',
-  },
-  devBypassText: {
-    ...Typography.captionMedium,
-    color: '#F5A623',
-    letterSpacing: 1,
-  },
 
   permissionContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xxl, gap: Spacing.lg },
   permissionText: { ...Typography.body, textAlign: 'center', lineHeight: 22 },

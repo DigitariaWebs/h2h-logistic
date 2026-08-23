@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { constaterAbsence, televerserPhotoDeGarde } from '@/services/scans';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import dayjs from 'dayjs';
@@ -140,6 +141,35 @@ export default function IncidentFormScreen() {
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
+
+    // 🔴 UN SEUL DE CES DOUZE FORMULAIRES ATTEINT LA BASE AUJOURD'HUI, et c'est
+    // dit ici plutôt que caché : `constater_absence` existe, testée, accordée —
+    // et personne ne l'appelait. Les onze autres restent locaux ; le protocole
+    // d'incidents complet est hors périmètre de cette tranche.
+    //
+    // 🔴 LA PHOTO EST OBLIGATOIRE, ET C'EST LE SERVEUR QUI L'EXIGE : un constat
+    // sans preuve ferait facturer l'acheteur sur la seule parole du
+    // cotransporteur particulier.
+    if (spec.type === 'buyer_absent' && mission?.shipmentId) {
+      const preuve = Object.values(fieldPhotos)[0] ?? extras.photoLieu;
+      if (!preuve) {
+        setToast("Une photo du lieu est requise pour constater l'absence.");
+        return;
+      }
+      try {
+        const chemin = await televerserPhotoDeGarde(mission.shipmentId, preuve, 'absence');
+        await constaterAbsence(mission.shipmentId, chemin);
+      } catch (e) {
+        // ⚠️ ON N'ENVOIE PAS LE FORMULAIRE SI LE CONSTAT ÉCHOUE. Le refus du
+        // serveur est une règle — « cette expedition a deja ete remise »,
+        // « seul le cotransporteur particulier assigne constate l absence » —
+        // et un formulaire local qui part quand même ferait croire au
+        // cotransporteur que l'absence est enregistrée.
+        setToast(e instanceof Error ? e.message : "Constat d'absence impossible.");
+        return;
+      }
+    }
+
     await submitIncident({
       type: spec.type,
       transactionId: info.transactionId,

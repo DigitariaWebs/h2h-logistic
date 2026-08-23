@@ -152,6 +152,7 @@ function versMission(
   const part = euros(l.transporter_earning_cents);
   return {
     id: l.id,
+    shipmentId: l.shipment_id ?? '',
     routeId: l.route_id ?? '',
     status: l.status,
     seller: participant(l.seller_id, 'seller', profils),
