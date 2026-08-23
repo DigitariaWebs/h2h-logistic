@@ -34,6 +34,7 @@ import { storage, StorageKeys, getStoredJSON, setStoredJSON } from '@/services/s
 import { requireClerk, peekClerk } from '@/lib/clerkBridge';
 import { supabase } from '@/lib/supabase';
 import { chargerMaConvention, signerConvention } from '@/services/convention';
+import { basculerEnLigne } from '@/services/disponibilite';
 
 type TransporterStatus = 'active' | 'offline';
 
@@ -71,7 +72,7 @@ interface AuthState {
     prelevementAutorise: boolean;
   }) => Promise<void>;
   setTransporterStatus: (status: TransporterStatus) => void;
-  toggleOnline: () => void;
+  toggleOnline: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -400,9 +401,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }));
   },
 
-  toggleOnline: () => {
+  /**
+   * 🔴 CE GESTE NE TOUCHAIT QUE ZUSTAND, ET C'ÉTAIT TOUT LE DÉFAUT. Le
+   * cotransporteur se mettait « hors ligne », le bouton basculait, et il
+   * continuait de recevoir des propositions de co-livraison : le serveur ne
+   * l'avait jamais su. Sa seule sortie réelle était de retirer ses trajets.
+   *
+   * ⚠️ ON BASCULE L'ÉCRAN D'ABORD, PUIS ON CORRIGE SI LE SERVEUR REFUSE. Un
+   * interrupteur qui attend l'aller-retour réseau avant de bouger donne
+   * l'impression d'être cassé ; un interrupteur qui ment est pire. On fait donc
+   * les deux : réponse immédiate, et retour en arrière visible si l'appel
+   * échoue.
+   */
+  toggleOnline: async () => {
     const courant = get().transporterStatus;
-    get().setTransporterStatus(courant === 'active' ? 'offline' : 'active');
+    const vise = courant === 'active' ? 'offline' : 'active';
+    get().setTransporterStatus(vise);
+    try {
+      const retenu = await basculerEnLigne(vise === 'active');
+      // ⚠️ ON S'ALIGNE SUR CE QUE LE SERVEUR A RETENU, pas sur ce qu'on a
+      // demandé : c'est la seule version qui décide des propositions.
+      get().setTransporterStatus(retenu ? 'active' : 'offline');
+    } catch (e) {
+      console.warn('[disponibilite] bascule refusee :', (e as Error).message);
+      get().setTransporterStatus(courant);
+    }
   },
 
   /**
