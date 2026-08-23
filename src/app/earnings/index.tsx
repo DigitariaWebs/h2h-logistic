@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +15,7 @@ import { Typography } from '@/constants/Typography';
 import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useEarningsStore } from '@/stores/useEarningsStore';
+import { demanderVersement, ouvrirCompteVersement } from '@/services/participations';
 import { useEcoImpactStore } from '@/stores/useEcoImpactStore';
 import { formatCo2 } from '@/utils/carbon';
 import { formatCurrency, formatDate } from '@/utils/formatting';
@@ -33,7 +34,8 @@ export default function EarningsScreen() {
   const { colors } = useColorScheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { summary, transactions, dailyEarnings, loadMockData, getEarningsForPeriod } = useEarningsStore();
+  const { summary, journal, dailyEarnings, erreur, charger, getEarningsForPeriod } =
+    useEarningsStore();
   const {
     totalKgSavedAllTime,
     totalKgSavedThisMonth,
@@ -42,8 +44,57 @@ export default function EarningsScreen() {
   const [period, setPeriod] = useState<Period>('week');
   const [showEconomy, setShowEconomy] = useState(false);
   const [selectedBar, setSelectedBar] = useState<number | null>(null);
+  const [retraitEnCours, setRetraitEnCours] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => { loadMockData(); loadEco(); }, []);
+  useEffect(() => { void charger(); loadEco(); }, []);
+
+  /**
+   * 🔴 CE BOUTON N'AVAIT AUCUN `onPress`, et la mention en dessous disait vrai :
+   * « les retraits seront disponibles prochainement ». Rien, dans toute la base,
+   * ne payait un cotransporteur pour une co-livraison réussie — les frais de
+   * livraison partaient sur le compte des transporteurs TIERS.
+   *
+   * ⚠️ ON N'ENVOIE NI MONTANT NI DESTINATAIRE. Le serveur déduit qui parle du
+   * jeton et demande à la base ce qu'elle lui doit.
+   *
+   * ⚠️ ET « RIEN À VERSER » N'EST PAS UN ÉCHEC : le serveur répond 200 avec
+   * `verse: false`. Le montant DÛ et le montant VERSABLE ne sont pas le même
+   * nombre — la fenêtre de réclamation court entre les deux.
+   */
+  const retirer = useCallback(async () => {
+    if (retraitEnCours) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setRetraitEnCours(true);
+    setMessage(null);
+    try {
+      const r = await demanderVersement();
+      if (r.verse) {
+        setMessage(`${formatCurrency(r.montantEuros)} en route vers votre compte.`);
+        await charger();
+      } else {
+        setMessage(r.motif ?? 'Rien à verser pour le moment.');
+      }
+    } catch (e) {
+      // 🔴 LES REFUS UTILES ARRIVENT ICI, ET CHACUN DIT QUOI FAIRE : « aucun
+      // compte de versement : commencez par vous inscrire », « Stripe n a pas
+      // encore fini de verifier votre compte ». Les écraser sous « erreur »
+      // laisserait le cotransporteur réessayer indéfiniment la même chose.
+      setMessage(e instanceof Error ? e.message : 'Versement indisponible');
+    } finally {
+      setRetraitEnCours(false);
+    }
+  }, [retraitEnCours, charger]);
+
+  /** Ouvre la page Stripe où le compte bancaire se donne — jamais chez nous. */
+  const ouvrirCompte = useCallback(async () => {
+    try {
+      const url = await ouvrirCompteVersement();
+      await Linking.openURL(url);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Inscription indisponible');
+    }
+  }, []);
 
   const periodCo2Kg =
     period === 'total' ? totalKgSavedAllTime : totalKgSavedThisMonth;
@@ -65,12 +116,38 @@ export default function EarningsScreen() {
             end={{ x: 1, y: 1 }}
             style={s.balanceCard}
           >
-            <Text style={s.balanceLabel}>Solde disponible</Text>
+            {/* ⚠️ TROIS NOMBRES DISTINCTS, ET LES CONFONDRE SERAIT MENTIR. Le
+                titre disait « Solde disponible » au-dessus du solde TOTAL : une
+                co-livraison remise hier est due, pas encore versable — la
+                fenêtre de réclamation court. */}
+            <Text style={s.balanceLabel}>Participations à recevoir</Text>
             <Text style={s.balanceAmount}>{formatCurrency(summary?.balance ?? 0)}</Text>
-            <TouchableOpacity style={s.withdrawBtn} activeOpacity={0.8}>
-              <Text style={s.withdrawText}>Retirer</Text>
+            <Text style={s.withdrawNote}>
+              {formatCurrency(summary?.availableBalance ?? 0)} versable maintenant
+              {(summary?.pendingBalance ?? 0) > 0
+                ? ` · ${formatCurrency(summary?.pendingBalance ?? 0)} en attente`
+                : ''}
+            </Text>
+            <TouchableOpacity
+              style={[s.withdrawBtn, retraitEnCours && { opacity: 0.6 }]}
+              activeOpacity={0.8}
+              onPress={retirer}
+              disabled={retraitEnCours || (summary?.availableBalance ?? 0) <= 0}
+            >
+              <Text style={s.withdrawText}>
+                {retraitEnCours ? 'Envoi…' : 'Retirer'}
+              </Text>
             </TouchableOpacity>
-            <Text style={s.withdrawNote}>Les retraits seront disponibles prochainement</Text>
+            {!!message && <Text style={s.withdrawNote}>{message}</Text>}
+            {/* 🔴 LE COMPTE BANCAIRE SE DONNE CHEZ STRIPE, jamais chez nous.
+                L'écran IBAN de cette application a été supprimé : il rangeait
+                un IBAN en clair dans AsyncStorage. */}
+            <TouchableOpacity onPress={ouvrirCompte} activeOpacity={0.8}>
+              <Text style={[s.withdrawNote, { textDecorationLine: 'underline' }]}>
+                Gérer mon compte de versement
+              </Text>
+            </TouchableOpacity>
+            {!!erreur && <Text style={s.withdrawNote}>{erreur}</Text>}
           </LinearGradient>
         </Animated.View>
 
@@ -120,19 +197,37 @@ export default function EarningsScreen() {
 
         {/* ─── TRANSACTIONS ─── */}
         <Animated.View entering={FadeInDown.delay(400).duration(300)}>
-          <Text style={[s.sectionTitle, { color: colors.text }]}>Dernières transactions</Text>
-          {transactions.slice(0, 10).map((tx) => (
-            <View key={tx.id} style={[s.txRow, { borderBottomColor: colors.border }]}>
-              <Icon name={tx.type === 'earning' ? 'cash' : tx.type === 'withdrawal' ? 'card' : 'close-circle'} size={20} color={tx.type === 'earning' ? colors.success : tx.type === 'withdrawal' ? colors.primary : colors.error} />
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Dernières écritures</Text>
+          {/* 🔴 LE GRAND LIVRE, PAS UNE LISTE INVENTÉE. Les anciennes lignes
+              portaient un itinéraire, un vendeur, un acheteur et une note —
+              aucun de ces champs n'existe dans `ledger_entries`, et les afficher
+              à côté d'un solde réel aurait mélangé ce qui engage la plateforme
+              et ce qui ne l'engage pas. */}
+          {journal.length === 0 && (
+            <Text style={[s.txDate, { color: colors.textSecondary }]}>
+              Aucune participation pour l’instant.
+            </Text>
+          )}
+          {journal.slice(0, 10).map((l, i) => (
+            <View key={`${l.survenuLe}-${i}`} style={[s.txRow, { borderBottomColor: colors.border }]}>
+              <Icon
+                name={l.sens === 'C' ? 'cash' : 'card'}
+                size={20}
+                color={l.sens === 'C' ? colors.success : colors.primary}
+              />
               <View style={s.txInfo}>
                 <Text style={[s.txTitle, { color: colors.text }]} numberOfLines={1}>
-                  {tx.type === 'withdrawal' ? 'Retrait' : `Co-livraison ${tx.reference}`}
+                  {l.sens === 'C' ? 'Participation' : 'Versement'}
                 </Text>
-                <Text style={[s.txRoute, { color: colors.textSecondary }]}>{tx.route}</Text>
-                <Text style={[s.txDate, { color: colors.textSecondary }]}>{formatDate(tx.date)}</Text>
+                {!!l.numeroSuivi && (
+                  <Text style={[s.txRoute, { color: colors.textSecondary }]}>{l.numeroSuivi}</Text>
+                )}
+                <Text style={[s.txDate, { color: colors.textSecondary }]}>{formatDate(l.survenuLe)}</Text>
               </View>
-              <Text style={[s.txAmount, { color: tx.amount > 0 ? colors.success : tx.type === 'cancelled' ? colors.textSecondary : colors.error }]}>
-                {tx.amount > 0 ? `+${formatCurrency(tx.amount)}` : tx.type === 'withdrawal' ? `-${formatCurrency(Math.abs(tx.amount))}` : '0€'}
+              <Text
+                style={[s.txAmount, { color: l.sens === 'C' ? colors.success : colors.primary }]}
+              >
+                {l.sens === 'C' ? '+' : '−'}{formatCurrency(l.montantEuros)}
               </Text>
             </View>
           ))}

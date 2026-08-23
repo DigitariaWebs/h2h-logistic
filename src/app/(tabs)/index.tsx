@@ -65,7 +65,7 @@ export default function HomeScreen() {
   // transition, et il se voit : le tableau de bord affiche des co-livraisons
   // réelles à côté d'un total de participations qui ne l'est pas encore.
   const { routes, hydrate: chargerTrajets } = useRouteStore();
-  const { summary, loadMockData: loadEarnings } = useEarningsStore();
+  const { summary, charger: chargerParticipations } = useEarningsStore();
   const {
     totalKgSavedAllTime,
     totalKgSavedThisMonth,
@@ -104,25 +104,25 @@ export default function HomeScreen() {
   useEffect(() => {
     void chargerMissions();
     void chargerTrajets();
-    loadEarnings();
+    void chargerParticipations();
     loadEco();
   }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    loadEarnings();
     loadEco();
-    // ⚠️ TRAJETS ET CO-LIVRAISONS FONT UN VRAI ALLER-RETOUR ; les gains et
-    // l'impact écologique, pas encore. On attend les deux premiers plutôt que
+    // ⚠️ TROIS ALLERS-RETOURS RÉELS, UN SEUL SIMULACRE. Trajets, co-livraisons
+    // et participations viennent de la base ; seul l'impact écologique reste
+    // sur ses données de démonstration. On attend les trois premiers plutôt que
     // de simuler un délai : un « tirer pour rafraîchir » qui s'arrête avant que
     // la donnée arrive montre l'ancienne liste et laisse croire que rien n'a
     // changé.
     try {
-      await Promise.all([chargerTrajets(), chargerMissions()]);
+      await Promise.all([chargerTrajets(), chargerMissions(), chargerParticipations()]);
     } finally {
       setRefreshing(false);
     }
-  }, [chargerTrajets, chargerMissions, loadEarnings, loadEco]);
+  }, [chargerTrajets, chargerMissions, chargerParticipations, loadEco]);
 
   // FAB animation
   const fabScale = useSharedValue(1);
