@@ -31,7 +31,14 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
+#
+# ⚠️ `.env*.local` NE COUVRE PAS `.env` TOUT COURT — le nom de fichier le plus
+# courant, celui que produisent la plupart des outils et des tutoriels. Un `.env`
+# cree par reflexe aurait ete commitable, et c est le fichier qui porte les cles
+# Clerk et Supabase. Meme regle que `hand-to-hand/.gitignore`.
+.env
+.env.*
+!.env.example
 
 # typescript
 *.tsbuildinfo
