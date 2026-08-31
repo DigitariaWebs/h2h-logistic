@@ -23,10 +23,10 @@ export function getManeuverIcon(type: string, modifier?: string): IconName {
 }
 
 export function getManeuverColor(type: string, modifier?: string): string {
-  if (type === 'arrive') return '#14248A';
+  if (type === 'arrive') return '#007BA7';
   if (type === 'roundabout' || type === 'rotary') return '#F59E0B';
   if (modifier === 'straight' || type === 'continue' || type === 'new name') return '#10B981';
-  return '#2A3FAA'; // blue for turns
+  return '#2A9CC4'; // blue for turns
 }
 
 export function getShortInstruction(step: RouteStep): string {

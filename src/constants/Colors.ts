@@ -1,6 +1,9 @@
+// Bleu céruléen — voir le commentaire jumeau dans
+// `hand-to-hand/src/constants/Colors.ts` : primary #007BA7, sa version foncée
+// #005C7D, et #2A9CC4 en thème sombre. Les deux fichiers bougent ensemble.
 export const Colors = {
   light: {
-    primary: '#14248A',
+    primary: '#007BA7',
     primaryGradientEnd: '#2A8A6A',
     accent: '#998FC7',
     accentLight: '#D4C2FC',
@@ -23,7 +26,7 @@ export const Colors = {
     goldBorder: '#E5C158',
   },
   dark: {
-    primary: '#2A3FAA',
+    primary: '#2A9CC4',
     primaryGradientEnd: '#34A882',
     accent: '#998FC7',
     accentLight: '#3D3654',
