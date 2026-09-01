@@ -1,0 +1,23 @@
+# ── FINS DE LIGNE ───────────────────────────────────────────────────────────
+#
+# 🔴 GIT FOR WINDOWS POSE `core.autocrlf=true` AU NIVEAU SYSTEME. Sans ce
+# fichier, un clone sous Windows reecrit toute la copie de travail en CRLF. Ici
+# les 39 tests n'en dependent pas — mais la marketplace, elle, y perd trois
+# garde-fous qui lisent leurs fichiers octet par octet, et dont les messages
+# d'echec designent de fausses pistes. Voir `hand-to-hand/.gitattributes`.
+#
+# ⚠️ LES DEUX DEPOTS TIENNENT LA MEME REGLE, pour la meme raison qu'ils
+# partagent leur palette : ce qui differe entre eux doit differer pour une
+# raison, et la fin de ligne n'en est pas une.
+#
+# `text=auto eol=lf` impose LF dans la copie de travail sur TOUTES les machines,
+# quelle que soit la config git locale. L'index etait deja en LF : ce fichier ne
+# change aucun contenu, il empeche la prochaine reecriture.
+* text=auto eol=lf
+
+# ── BINAIRES — jamais reecrits, jamais diffes comme du texte ────────────────
+*.png  binary
+*.webp binary
+*.gif  binary
+*.mp4  binary
+*.glb  binary

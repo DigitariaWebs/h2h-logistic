@@ -19,12 +19,21 @@ silence. Ce fichier-ci ne répète que ce qui est propre à H2H Logistic.
 ## Ce qui est propre à ce dépôt
 
 ```bash
-git clone https://github.com/DigitariaWebs/h2h-logistic.git
+git clone https://github.com/ProgixDev/h2h-logistic.git
 cd h2h-logistic && npm ci
 cp .env.example .env.local     # puis collez les vraies valeurs
 npm test                       # attendu : 39 tests, 0 échec
 npm start                      # expo start --go
 ```
+
+> ⚠️ **Si les 39 tests ne tombent pas juste, regardez les fins de ligne avant le
+> code.** Git for Windows pose `core.autocrlf=true` au niveau système et un
+> clone y réécrit toute la copie de travail en CRLF. Le `.gitattributes` ajouté
+> le 01/09/2026 l'empêche ; une copie plus ancienne se rattrape avec
+> `git config --local core.autocrlf false` puis
+> `git rm --cached -r . -q && git reset --hard HEAD`. Côté marketplace, le même
+> piège fait tomber trois garde-fous en désignant de fausses pistes — c'est le
+> piège **0** du handoff principal.
 
 ### Les 3 variables d'environnement
 
