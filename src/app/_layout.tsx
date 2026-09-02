@@ -117,6 +117,20 @@ export default function RootLayout() {
               animation: 'slide_from_right',
             }}
           >
+            {/* 🔴 CET `index` DOIT ÊTRE DÉCLARÉ, ET EN PREMIER. Quand un `Stack`
+                déclare des écrans explicitement, expo-router prend LE PREMIER
+                comme route d'ancrage. Ici les trois seuls déclarés étaient
+                `publish`, `navigate` et `call` : l'application démarrait donc
+                sur « Publier un trajet », étape 1/8.
+                ⚠️ ET TOUTE LA CHAÎNE D'ACCÈS ÉTAIT CONTOURNÉE. `index.tsx`
+                enchaîne onboarding → connexion → complete-profile → convention
+                → pending-validation → onglets. Rien de tout cela ne s'exécutait :
+                un inconnu, jamais inscrit, jamais validé, arrivait directement
+                dans le formulaire de publication d'un trajet. Constaté à
+                l'émulateur le 02/09/2026, au premier lancement de l'application.
+                La place de marché, elle, déclare `index` en premier — c'est la
+                seule différence entre les deux, et elle décidait de tout. */}
+            <Stack.Screen name="index" />
             <Stack.Screen name="publish" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="navigate" options={{ animation: 'slide_from_bottom', gestureEnabled: false }} />
             <Stack.Screen name="call" options={{ animation: 'slide_from_bottom', gestureEnabled: false }} />
