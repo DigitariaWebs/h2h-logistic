@@ -14,6 +14,7 @@
 import { create } from 'zustand';
 import type { Mission, MissionStatus, CancellationReason, OffHubProposal, SupportOutcome } from '@/types/mission';
 import { ACTIVE_STATUSES, COMPLETED_STATUSES } from '@/types/mission';
+import { sequenceur } from '@/utils/derniereLectureGagne';
 import type { DeclarantRole } from '@/types/incident';
 import { chargerMissions, accepterMission, refuserMission } from '@/services/missions';
 import { computeSettlement } from '@/utils/settlement';
@@ -85,6 +86,12 @@ function isProposalSeparated(m: Mission, pairs: SeparatedPair[]): boolean {
   );
 }
 
+// 🔴 NEUF ÉCRANS APPELLENT `charger()`, ET DEUX LECTURES QUI SE CROISENT
+// s'ecrivaient l'une sur l'autre dans l'ordre du RÉSEAU. Voir
+// `derniereLectureGagne` : le cas couteux est le rechargement d'apres-scan,
+// qu'une lecture partie plus tot pouvait annuler a l'ecran.
+const lectures = sequenceur();
+
 function rebuildMissions(state: { proposals: Mission[]; activeMissions: Mission[]; completedMissions: Mission[] }) {
   return [...state.proposals, ...state.activeMissions, ...state.completedMissions];
 }
@@ -127,11 +134,16 @@ export const useMissionStore = create<MissionState>((set, get) => ({
    * vivent en base — recharger, c'est se resynchroniser, pas se réinitialiser.
    */
   charger: async () => {
+    const jeton = lectures.demarrer();
     set({ isLoading: true, erreur: null });
     try {
       const missions = await chargerMissions();
+      if (lectures.estPerimee(jeton)) return;
       set({ ...repartir(missions), missions, isLoading: false });
     } catch (e) {
+      // ⚠️ MÊME GARDE DANS LE `catch` : l'échec d'une vieille requête ne doit
+      // pas effacer le résultat d'une plus récente qui a réussi.
+      if (lectures.estPerimee(jeton)) return;
       set({
         isLoading: false,
         erreur: e instanceof Error ? e.message : 'Co-livraisons indisponibles',
