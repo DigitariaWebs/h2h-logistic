@@ -11,6 +11,7 @@ import { Typography } from '@/constants/Typography';
 import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useRouteStore } from '@/stores/useRouteStore';
+import { normaliserHeure, heureValide } from '@/utils/heureTrajet';
 
 const DAYS = [
   { key: 1, short: 'L', label: 'Lun' },
@@ -23,8 +24,11 @@ const DAYS = [
 ];
 
 function toleranceStr(time: string): string {
-  if (!time || !time.includes(':')) return '';
-  const [h, m] = time.split(':').map(Number);
+  // ⚠️ ON NE FAIT PLUS CONFIANCE AU TEXTE BRUT. Auparavant « 99:99 » donnait
+  // une fenêtre « 04:29 — 04:49 » affichée avec aplomb.
+  const hhmm = normaliserHeure(time);
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
   const totalMin = h * 60 + m;
   const from = totalMin - 10;
   const to = totalMin + 10;
@@ -56,13 +60,22 @@ export default function PublishScheduleScreen() {
     setDeliveryTimes((prev) => ({ ...prev, [hubId]: time }));
   };
 
-  const allTimesSet = pickupTime.length >= 4 && form.deliveryHubs.every((h) => (deliveryTimes[h.hubId]?.length ?? 0) >= 4);
+  // 🔴 « LONGUEUR >= 4 » LAISSAIT PASSER « 7h30 », QUI FAISAIT PLANTER L ACCUEIL.
+  const allTimesSet =
+    heureValide(pickupTime) && form.deliveryHubs.every((h) => heureValide(deliveryTimes[h.hubId]));
   const daysOk = !isRecurring || days.length > 0;
   const canNext = allTimesSet && daysOk;
 
   const handleNext = () => {
-    setFormField('pickupTime', pickupTime);
-    setFormField('deliveryTimes', deliveryTimes);
+    // ⚠️ ON ENREGISTRE LA FORME NORMALISÉE. « 7h30 » saisi devient « 07:30 »
+    // stocké : tout ce qui lit `schedule.pickupTime` en aval fait `split(':')`.
+    setFormField('pickupTime', normaliserHeure(pickupTime)!);
+    setFormField(
+      'deliveryTimes',
+      Object.fromEntries(
+        Object.entries(deliveryTimes).map(([id, t]) => [id, normaliserHeure(t) ?? t]),
+      ),
+    );
     if (isRecurring) setFormField('recurringDays', days);
     setStep(6);
     router.push('/publish/capacity');
@@ -94,7 +107,7 @@ export default function PublishScheduleScreen() {
               maxLength={5}
             />
           </View>
-          {pickupTime.length >= 4 && (
+          {heureValide(pickupTime) && (
             <View style={[styles.toleranceBar, { backgroundColor: colors.primary + '10' }]}>
               <Text style={[styles.toleranceText, { color: colors.primary }]}>
                 Fenêtre : {toleranceStr(pickupTime)}
@@ -120,7 +133,7 @@ export default function PublishScheduleScreen() {
                 maxLength={5}
               />
             </View>
-            {(deliveryTimes[hub.hubId]?.length ?? 0) >= 4 && (
+            {heureValide(deliveryTimes[hub.hubId]) && (
               <View style={[styles.toleranceBar, { backgroundColor: colors.primary + '10' }]}>
                 <Text style={[styles.toleranceText, { color: colors.primary }]}>
                   Fenêtre : {toleranceStr(deliveryTimes[hub.hubId])}

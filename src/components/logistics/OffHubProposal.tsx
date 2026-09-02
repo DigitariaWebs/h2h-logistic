@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Typography } from '@/constants/Typography';
 import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { normaliserHeure, heureValide } from '@/utils/heureTrajet';
 
 type Target = 'seller' | 'buyer';
 
@@ -30,11 +31,14 @@ export function OffHubProposalSheet({
   const [address, setAddress] = useState('');
   const [time, setTime] = useState('');
 
-  const canSend = address.trim().length > 2 && time.trim().length >= 4;
+  // 🔴 MÊME DÉFAUT QUE L'ASSISTANT DE PUBLICATION : « longueur >= 4 » acceptait
+  // « 7h30 » et « 99:99 ». Un rendez-vous hors hub se donne à un inconnu ; une
+  // heure fantaisiste s'y paie par un déplacement pour rien.
+  const canSend = address.trim().length > 2 && heureValide(time);
 
   const handleSend = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onSend(target, address.trim(), time.trim());
+    onSend(target, address.trim(), normaliserHeure(time)!);
     setAddress('');
     setTime('');
   };

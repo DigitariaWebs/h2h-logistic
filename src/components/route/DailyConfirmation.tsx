@@ -8,6 +8,7 @@ import { ToleranceWindow } from '@/components/logistics/ToleranceWindow';
 import { Typography } from '@/constants/Typography';
 import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { normaliserHeure } from '@/utils/heureTrajet';
 import type { PublishedRoute } from '@/types/route';
 
 interface DailyConfirmationProps {
@@ -20,7 +21,16 @@ export function DailyConfirmation({ route, onConfirm, onSkip }: DailyConfirmatio
   const { colors } = useColorScheme();
 
   // Build a scheduled time for today using the pickup time
-  const [hours, mins] = (route.schedule.pickupTime ?? '07:00').split(':').map(Number);
+  //
+  // 🔴 CETTE LIGNE JETAIT. `'7h30'.split(':')` vaut `['7h30']` : `hours` NaN,
+  // `mins` undefined, la date devient invalide et `toISOString()` lève un
+  // RangeError — la carte « Trajet du jour » ne s'affichait pas, elle plantait.
+  //
+  // ⚠️ LA SAISIE EST DÉSORMAIS VALIDÉE EN AMONT, ET ON SE PROTÈGE QUAND MÊME :
+  // les trajets déjà publiés portent l'ancienne saisie, et rien ne les a
+  // réécrits. Un écran d'accueil ne doit pas tomber sur une ligne d'historique.
+  const hhmm = normaliserHeure(route.schedule.pickupTime) ?? '07:00';
+  const [hours, mins] = hhmm.split(':').map(Number);
   const today = new Date();
   today.setHours(hours, mins, 0, 0);
   const scheduledTime = today.toISOString();
