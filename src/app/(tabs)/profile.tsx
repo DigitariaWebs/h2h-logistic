@@ -46,7 +46,7 @@ export default function ProfileScreen() {
             {user?.firstName ?? 'Cotransporteur particulier'} {user?.lastName ?? ''}
           </Text>
           <Text style={[styles.stats, { color: colors.textSecondary }]}>
-            {user?.totalDeliveries ?? 0} co-livraisons — {user?.rating?.toFixed(1) ?? '4.8'}/5
+            {user?.totalDeliveries ?? 0} co-livraisons — {user?.rating ? `${user.rating.toFixed(1)}/5` : 'pas encore note'}
           </Text>
         </Card>
 

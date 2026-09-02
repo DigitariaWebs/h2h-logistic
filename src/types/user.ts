@@ -8,7 +8,16 @@ export interface User {
   role: 'transporter';
   isVerified: boolean;
   isOnline: boolean;
-  rating: number;
+  /**
+   * La note moyenne reçue, ou `null` tant que PERSONNE n'a noté.
+   *
+   * 🔴 CE CHAMP VALAIT `5.0` PAR DÉFAUT. Un cotransporteur inscrit depuis une
+   * heure, sans une seule co-livraison, s'affichait « 5.0 note moyenne » — et
+   * c'est exactement le chiffre sur lequel un acheteur décide à qui confier son
+   * colis. `null` n'est pas un détail de typage : c'est la différence entre
+   * « personne ne l'a encore noté » et « tout le monde l'a trouvé parfait ».
+   */
+  rating: number | null;
   totalDeliveries: number;
   createdAt: string;
 }

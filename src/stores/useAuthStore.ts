@@ -149,7 +149,19 @@ function versProfil(
     role: 'transporter',
     isVerified: roleTransporteur?.status === 'active',
     isOnline: precedent?.isOnline ?? false,
-    rating: precedent?.rating ?? 5.0,
+    // 🔴 AUCUNE NOTE NE PEUT VENIR D'ICI. `?? 5.0` offrait un sans-faute à qui
+    // venait de s'inscrire, et le repli sur `precedent` faisait pire : il
+    // REPRENAIT cette note inventée au stockage local à chaque démarrage, donc
+    // elle survivait au correctif. Marc Dubois, inscrit ce matin, affichait
+    // encore « 5.0 note moyenne » après le passage à `?? null`.
+    //
+    // ⚠️ LA VRAIE SOURCE EST `courier_profiles.rating`, CÔTÉ SERVEUR — la table
+    // que `chercher_cotransporteurs` interroge déjà pour montrer un
+    // cotransporteur à un acheteur. Elle est VIDE aujourd'hui (0 ligne), et
+    // `chargerProfil()` ne la lit pas encore. Tant que ce n'est pas branché, la
+    // seule valeur honnête est « pas de note » : le stockage local n'a jamais
+    // contenu qu'un chiffre fabriqué.
+    rating: null,
     totalDeliveries: precedent?.totalDeliveries ?? 0,
     createdAt: precedent?.createdAt ?? new Date().toISOString(),
     transportTypes: precedent?.transportTypes ?? [],

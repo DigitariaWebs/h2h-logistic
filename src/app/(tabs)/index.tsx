@@ -59,13 +59,17 @@ export default function HomeScreen() {
   const { user, transporterStatus, toggleOnline } = useAuthStore();
   const { missions, charger: chargerMissions, getActiveMissions, getPendingMissions, getCompletedMissions } =
     useMissionStore();
-  // ⚠️ TRAJETS ET CO-LIVRAISONS VIENNENT DE LA BASE. Les gains et l'impact
-  // écologique restent sur leurs données de démonstration — ils seront branchés
-  // avec la tranche de l'argent. Mélanger les deux est le prix de la
-  // transition, et il se voit : le tableau de bord affiche des co-livraisons
-  // réelles à côté d'un total de participations qui ne l'est pas encore.
+  // ⚠️ TRAJETS, CO-LIVRAISONS ET PARTICIPATIONS VIENNENT DE LA BASE. Restent en
+  // démonstration : l'impact écologique (`loadMockData`) et les notifications
+  // (`mockNotifications`, plus bas) — cette application n'a aucun service de
+  // notifications, l'écran entier est un simulacre, badge compris.
+  //
+  // ⚠️ CE COMMENTAIRE DISAIT ENCORE QUE LES GAINS ÉTAIENT SIMULÉS. Il avait
+  // raison jusqu'à ce que les littéraux du bloc « earnings » soient remplacés
+  // par le journal réel ; un commentaire périmé sur ce qui est vrai ou faux à
+  // l'écran est précisément ce qui a laissé « 12 co-livraisons » survivre.
   const { routes, hydrate: chargerTrajets } = useRouteStore();
-  const { summary, charger: chargerParticipations } = useEarningsStore();
+  const { summary, charger: chargerParticipations, getEarningsForPeriod } = useEarningsStore();
   const {
     totalKgSavedAllTime,
     totalKgSavedThisMonth,
@@ -91,15 +95,22 @@ export default function HomeScreen() {
     (r) => r.type === 'recurring' && r.status === 'active' && r.schedule.recurringDays?.includes(todayDay) && !dailyConfirmed[r.id],
   );
 
-  // Earnings based on period (mock)
-  const earningsAmount =
-    earningsPeriod === 'day'
-      ? 12.3
-      : earningsPeriod === 'week'
-        ? 34.8
-        : summary?.thisMonth ?? 0;
-  const earningsDeliveries =
-    earningsPeriod === 'day' ? 2 : earningsPeriod === 'week' ? 5 : 12;
+  // 🔴 CE BLOC ANNONÇAIT UNE ACTIVITÉ QUI N'EXISTAIT PAS. Les trois valeurs
+  // étaient des littéraux — 12,30 € et 2 co-livraisons sur la journée, 34,80 €
+  // et 5 sur la semaine, 12 sur le mois. Un compte créé une heure plus tôt,
+  // sans une seule mission, affichait donc « 0,00 € » (ça, c'était vrai)
+  // juste à côté de « 12 co-livraisons » (ça, non). Constaté à l'émulateur le
+  // 02/09/2026 sur le compte de Marc Dubois, inscrit le matin même.
+  //
+  // ⚠️ LE CALCUL JUSTE EXISTAIT DÉJÀ, À CÔTÉ, INUTILISÉ. `getEarningsForPeriod`
+  // additionne les lignes AU CRÉDIT du journal des participations sur la
+  // période — montant ET nombre. C'est la même donnée que le reste de l'écran.
+  //
+  // ⚠️ « day » ICI, « today » DANS LE MAGASIN. Les deux vocabulaires existaient
+  // déjà ; la conversion est le prix à payer pour ne pas renommer un type
+  // public au passage.
+  const { amount: earningsAmount, deliveries: earningsDeliveries } =
+    getEarningsForPeriod(earningsPeriod === 'day' ? 'today' : earningsPeriod);
 
   useEffect(() => {
     void chargerMissions();
@@ -232,7 +243,7 @@ export default function HomeScreen() {
               <Text style={styles.earningsAmount}>{formatCurrency(earningsAmount)}</Text>
 
               <Text style={styles.earningsMeta}>
-                {earningsDeliveries} co-livraisons • {user?.rating?.toFixed(1) ?? '4.9'} note
+                {earningsDeliveries} co-livraisons • {user?.rating ? user.rating.toFixed(1) : '—'} note
                 moyenne
               </Text>
             </LinearGradient>
@@ -352,7 +363,7 @@ export default function HomeScreen() {
             />
             <StatBox
               label="Note moyenne"
-              value={`${user?.rating?.toFixed(1) ?? '4.9'}`}
+              value={user?.rating ? user.rating.toFixed(1) : '—'}
               sub=""
               subColor={colors.warning}
               colors={colors}
