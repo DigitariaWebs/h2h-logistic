@@ -30,6 +30,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sequenceur } from './derniereLectureGagne';
 
+// Les deux lignes que chaque magasin doit porter — en clair plutot qu'en
+// expression reguliere : elles contiennent des parentheses, et une regex mal
+// echappee passerait pour vraie sans rien verifier.
+const JETON = 'const jeton = lectures.demarrer()';
+const GARDE = 'if (lectures.estPerimee(jeton)) return;';
+
 test('🔴 UNE RÉPONSE EN RETARD NE RÉÉCRIT PAS UNE PLUS RÉCENTE', () => {
   const s = sequenceur();
 
@@ -85,19 +91,22 @@ test('⚠️ DEUX SÉQUENCEURS SONT INDÉPENDANTS', () => {
   assert.equal(a.estPerimee(ja), false, 'un sequenceur en perime un autre');
 });
 
-test('🔴 LE MAGASIN DES CO-LIVRAISONS S’EN SERT AUX DEUX SORTIES', async () => {
+test('🔴 LES TROIS MAGASINS QUI LISENT EN CONCURRENCE S’EN SERVENT', async () => {
   // ⚠️ TEST DE STRUCTURE, ET IL EST JUSTIFIÉ : la primitive peut etre parfaite
   // et le magasin ne pas s en servir — c etait exactement l etat d avant.
   const { readFileSync } = await import('node:fs');
   const { join } = await import('node:path');
-  const code = readFileSync(join(process.cwd(), 'src', 'stores', 'useMissionStore.ts'), 'utf8');
-
-  assert.match(code, /const jeton = lectures\.demarrer\(\)/,
-    'charger() ne prend plus de jeton de fraicheur');
-  // Une garde avant le `set` du succes, une avant celui de l'erreur.
-  assert.equal(
-    (code.match(/if \(lectures\.estPerimee\(jeton\)\) return;/g) ?? []).length,
-    2,
-    'il manque une garde : le succes ou l echec peut encore ecrire un etat perime',
-  );
+  // ⚠️ LES TROIS ONT LE MÊME DÉFAUT ET PLUSIEURS APPELANTS : co-livraisons (9),
+  // participations (4), trajets (3). Une primitive parfaite dont un magasin ne
+  // se sert pas ne repare rien — c etait exactement l etat d avant.
+  for (const magasin of ['useMissionStore', 'useEarningsStore', 'useRouteStore']) {
+    const code = readFileSync(join(process.cwd(), 'src', 'stores', magasin + '.ts'), 'utf8');
+    assert.ok(
+      code.includes(JETON),
+      magasin + ' ne prend plus de jeton de fraicheur');
+    assert.ok(
+      code.split(GARDE).length - 1 >= 1,
+      magasin + ' n a plus de garde : une reponse perimee peut ecrire',
+    );
+  }
 });

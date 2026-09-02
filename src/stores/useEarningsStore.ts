@@ -21,6 +21,7 @@ import {
   chargerJournalParticipations,
   type LigneParticipation,
 } from '@/services/participations';
+import { sequenceur } from '@/utils/derniereLectureGagne';
 
 type Period = 'today' | 'week' | 'month' | 'total';
 
@@ -69,6 +70,12 @@ function depuis(journal: LigneParticipation[], quand: Date) {
   };
 }
 
+// 🔴 QUATRE ÉCRANS APPELLENT `charger()` — l'accueil au montage et au
+// rafraîchissement, « Mes participations », et l'historique. Deux lectures qui
+// se croisent s'écrivaient dans l'ordre du RÉSEAU : un solde périmé pouvait
+// recouvrir un solde plus récent. Voir `derniereLectureGagne`.
+const lectures = sequenceur();
+
 export const useEarningsStore = create<EarningsState>((set, get) => ({
   summary: null,
   dailyEarnings: [],
@@ -77,12 +84,14 @@ export const useEarningsStore = create<EarningsState>((set, get) => ({
   erreur: null,
 
   charger: async () => {
+    const jeton = lectures.demarrer();
     set({ isLoading: true, erreur: null });
     try {
       const [p, journal] = await Promise.all([
         chargerParticipations(),
         chargerJournalParticipations(200),
       ]);
+      if (lectures.estPerimee(jeton)) return;
       const credits = journal.filter((l) => l.sens === 'C');
       const total = Math.round((p.soldeEuros + p.verseEuros) * 100) / 100;
       set({
@@ -106,6 +115,9 @@ export const useEarningsStore = create<EarningsState>((set, get) => ({
         },
       });
     } catch (e) {
+      // ⚠️ MÊME GARDE QUE POUR LE SUCCÈS : un échec tardif ne doit pas effacer
+      // un solde plus récent qui, lui, est arrivé.
+      if (lectures.estPerimee(jeton)) return;
       set({
         isLoading: false,
         erreur: e instanceof Error ? e.message : 'Participations indisponibles',

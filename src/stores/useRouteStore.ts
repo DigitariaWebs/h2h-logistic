@@ -24,6 +24,7 @@ import {
   publierTrajet,
   retirerTrajet,
 } from '@/services/trajets';
+import { sequenceur } from '@/utils/derniereLectureGagne';
 
 interface RouteState {
   routes: PublishedRoute[];
@@ -59,6 +60,13 @@ interface RouteState {
   publishRoute: () => Promise<PublishedRoute>;
 }
 
+// 🔴 TROIS ÉCRANS APPELLENT `hydrate()` — l'accueil au montage et au
+// rafraîchissement, l'onglet Trajets au montage. Sans jeton de fraîcheur, une
+// lecture partie AVANT une déconnexion revenait APRÈS le `routes: []` et
+// remettait les trajets à l'écran d'un compte déconnecté. Voir
+// `derniereLectureGagne`.
+const lectures = sequenceur();
+
 export const useRouteStore = create<RouteState>((set, get) => ({
   routes: [],
   form: { ...INITIAL_FORM },
@@ -66,6 +74,7 @@ export const useRouteStore = create<RouteState>((set, get) => ({
   isPublishing: false,
 
   hydrate: async () => {
+    const jeton = lectures.demarrer();
     // ⚠️ SANS SESSION, PAS DE TRAJETS — et ce n'est pas une erreur : c'est le
     // cas normal au premier lancement. `published_routes_owner_read` ne rendrait
     // rien de toute façon.
@@ -74,7 +83,9 @@ export const useRouteStore = create<RouteState>((set, get) => ({
       return;
     }
     try {
-      set({ routes: await chargerMesTrajets() });
+      const trajets = await chargerMesTrajets();
+      if (lectures.estPerimee(jeton)) return;
+      set({ routes: trajets });
     } catch (e) {
       // ⚠️ SANS CETTE TRACE, une policy refusée est indiscernable d'une liste
       // légitimement vide — et un cotransporteur qui ne voit plus ses trajets
