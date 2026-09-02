@@ -24,15 +24,14 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { Icon } from '@/components/ui/Icon';
 
-const CITIES = [
-  'Nice',
-  'Cannes',
-  'Marseille',
-  'Toulon',
-  'Antibes',
-  'Fréjus',
-  'Monaco',
-] as const;
+// 🔴 CET ÉCRAN AVAIT SA PROPRE LISTE, PLUS COURTE QUE CELLE DE LA PUBLICATION.
+// Sept villes ici, dix dans `constants/Cities.ts` : Menton, Grasse et
+// Saint-Raphaël existaient comme corridor de trajet mais pas comme ville
+// principale. Un cotransporteur de Menton ne pouvait donc pas se déclarer chez
+// lui — alors que la ville principale sert justement à lui proposer des
+// missions. Deux listes écrites à la main pour le même concept finissent
+// toujours par diverger ; celle-ci l'avait déjà fait.
+import { CITIES } from '@/constants/Cities';
 
 export default function CompleteProfileScreen() {
   const { colors } = useColorScheme();

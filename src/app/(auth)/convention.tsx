@@ -262,7 +262,11 @@ export default function ConventionScreen() {
         >
           <Input
             label="Nom et prénom du représentant"
-            placeholder="Ex. Achraf Arabi"
+            // ⚠️ PAS DE NOM QUI RESSEMBLE À QUELQU'UN. Ce champ portait
+            // « Ex. Achraf Arabi » — un nom de personne réelle en apparence,
+            // dans le formulaire d'une convention juridique que l'on signe.
+            // Un exemple doit se lire comme un exemple.
+            placeholder="Ex. Prénom Nom"
             value={state.representative}
             onChangeText={(v) =>
               setState((d) => ({ ...d, representative: v }))
