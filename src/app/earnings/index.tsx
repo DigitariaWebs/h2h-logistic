@@ -16,7 +16,9 @@ import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useEarningsStore } from '@/stores/useEarningsStore';
 import { demanderVersement, ouvrirCompteVersement } from '@/services/participations';
-import { useEcoImpactStore } from '@/stores/useEcoImpactStore';
+import { impactCo2 } from '@/utils/impactEcologique';
+import { useMissionStore } from '@/stores/useMissionStore';
+import { useRouteStore } from '@/stores/useRouteStore';
 import { formatCo2 } from '@/utils/carbon';
 import { formatCurrency, formatDate } from '@/utils/formatting';
 
@@ -36,18 +38,17 @@ export default function EarningsScreen() {
   const insets = useSafeAreaInsets();
   const { summary, journal, dailyEarnings, erreur, charger, getEarningsForPeriod } =
     useEarningsStore();
-  const {
-    totalKgSavedAllTime,
-    totalKgSavedThisMonth,
-    loadMockData: loadEco,
-  } = useEcoImpactStore();
+  // 🔴 CALCULÉ SUR LES VRAIES CO-LIVRAISONS TERMINÉES — voir `impactEcologique`.
+  const { getCompletedMissions } = useMissionStore();
+  const { routes } = useRouteStore();
+  const impact = impactCo2(getCompletedMissions(), routes);
   const [period, setPeriod] = useState<Period>('week');
   const [showEconomy, setShowEconomy] = useState(false);
   const [selectedBar, setSelectedBar] = useState<number | null>(null);
   const [retraitEnCours, setRetraitEnCours] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => { void charger(); loadEco(); }, []);
+  useEffect(() => { void charger(); }, []);
 
   /**
    * 🔴 CE BOUTON N'AVAIT AUCUN `onPress`, et la mention en dessous disait vrai :
@@ -97,7 +98,7 @@ export default function EarningsScreen() {
   }, []);
 
   const periodCo2Kg =
-    period === 'total' ? totalKgSavedAllTime : totalKgSavedThisMonth;
+    period === 'total' ? impact.total : impact.ceMois;
 
   const periodData = getEarningsForPeriod(period);
 

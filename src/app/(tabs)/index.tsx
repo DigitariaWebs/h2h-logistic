@@ -34,11 +34,12 @@ import { useMissionStore } from '@/stores/useMissionStore';
 import { useRouteStore } from '@/stores/useRouteStore';
 import { useEarningsStore } from '@/stores/useEarningsStore';
 import { formatCurrency, formatTime } from '@/utils/formatting';
-import { mockNotifications, type AppNotification } from '@/services/mock/notifications';
+import { type AppNotification } from '@/services/mock/notifications';
+import { useNotificationStore } from '@/stores/useNotificationStore';
 import { DailyConfirmation } from '@/components/route/DailyConfirmation';
 import { EcoImpactSummary } from '@/components/dashboard/EcoImpactSummary';
 import { AdBanner } from '@/components/dashboard/AdBanner';
-import { useEcoImpactStore } from '@/stores/useEcoImpactStore';
+import { impactCo2 } from '@/utils/impactEcologique';
 import { tauxReussiteLabel } from '@/utils/tauxReussite';
 import type { Mission } from '@/types/mission';
 import type { PublishedRoute } from '@/types/route';
@@ -60,23 +61,24 @@ export default function HomeScreen() {
   const { user, transporterStatus, toggleOnline } = useAuthStore();
   const { missions, charger: chargerMissions, getActiveMissions, getPendingMissions, getCompletedMissions } =
     useMissionStore();
-  // ⚠️ TRAJETS, CO-LIVRAISONS ET PARTICIPATIONS VIENNENT DE LA BASE. Restent en
-  // démonstration : l'impact écologique (`loadMockData`) et les notifications
-  // (`mockNotifications`, plus bas) — cette application n'a aucun service de
-  // notifications, l'écran entier est un simulacre, badge compris.
+  // ⚠️ TRAJETS, CO-LIVRAISONS, PARTICIPATIONS ET NOTIFICATIONS VIENNENT DE LA
+  // BASE. Ne reste en démonstration que l'impact écologique (`loadMockData`).
+  //
+  // ⚠️ CE COMMENTAIRE A DÉJÀ ÉTÉ FAUX UNE FOIS — il affirmait que les gains
+  // étaient simulés alors qu'ils venaient d'être branchés. Un commentaire
+  // périmé sur ce qui est vrai à l'écran est précisément ce qui laisse
+  // survivre un chiffre inventé.
   //
   // ⚠️ CE COMMENTAIRE DISAIT ENCORE QUE LES GAINS ÉTAIENT SIMULÉS. Il avait
   // raison jusqu'à ce que les littéraux du bloc « earnings » soient remplacés
   // par le journal réel ; un commentaire périmé sur ce qui est vrai ou faux à
   // l'écran est précisément ce qui a laissé « 12 co-livraisons » survivre.
   const { routes, hydrate: chargerTrajets } = useRouteStore();
+  const { notifications, nonLues, charger: chargerNotifs } = useNotificationStore();
   const { summary, charger: chargerParticipations, getEarningsForPeriod } = useEarningsStore();
-  const {
-    totalKgSavedAllTime,
-    totalKgSavedThisMonth,
-    kgSavedLastMonth,
-    loadMockData: loadEco,
-  } = useEcoImpactStore();
+  // 🔴 CALCULÉ SUR LES VRAIES CO-LIVRAISONS TERMINÉES, plus sur une graine
+  // inventée : voir `impactEcologique`. Une allégation de CO₂ évité affichée à
+  // quelqu'un qui n'a rien transporté n'est pas une donnée de démonstration.
 
   const [refreshing, setRefreshing] = useState(false);
   const [earningsPeriod, setEarningsPeriod] = useState<EarningsPeriod>('month');
@@ -87,8 +89,9 @@ export default function HomeScreen() {
   const activeMissions = [...getPendingMissions(), ...getActiveMissions()];
   const activeRoutes = routes.filter((r) => r.status === 'active');
   const completedMissions = getCompletedMissions();
+  const impact = impactCo2(completedMissions, routes);
   const totalDeliveries = user?.totalDeliveries ?? completedMissions.length;
-  const unreadNotifs = mockNotifications.filter((n) => !n.read).length;
+  const unreadNotifs = nonLues;
 
   // Recurring routes with today as a scheduled day
   const todayDay = new Date().getDay() || 7; // 1=Mon..7=Sun
@@ -117,12 +120,11 @@ export default function HomeScreen() {
     void chargerMissions();
     void chargerTrajets();
     void chargerParticipations();
-    loadEco();
+    void chargerNotifs();
   }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    loadEco();
     // ⚠️ TROIS ALLERS-RETOURS RÉELS, UN SEUL SIMULACRE. Trajets, co-livraisons
     // et participations viennent de la base ; seul l'impact écologique reste
     // sur ses données de démonstration. On attend les trois premiers plutôt que
@@ -130,11 +132,11 @@ export default function HomeScreen() {
     // la donnée arrive montre l'ancienne liste et laisse croire que rien n'a
     // changé.
     try {
-      await Promise.all([chargerTrajets(), chargerMissions(), chargerParticipations()]);
+      await Promise.all([chargerTrajets(), chargerMissions(), chargerParticipations(), chargerNotifs()]);
     } finally {
       setRefreshing(false);
     }
-  }, [chargerTrajets, chargerMissions, chargerParticipations, loadEco]);
+  }, [chargerTrajets, chargerMissions, chargerParticipations, chargerNotifs]);
 
   // FAB animation
   const fabScale = useSharedValue(1);
@@ -375,9 +377,9 @@ export default function HomeScreen() {
         {/* ─── 4b. ECO IMPACT ─── */}
         <Animated.View entering={FadeInDown.delay(450).duration(400)}>
           <EcoImpactSummary
-            kgSavedThisMonth={totalKgSavedThisMonth}
-            kgSavedLastMonth={kgSavedLastMonth}
-            kgSavedAllTime={totalKgSavedAllTime}
+            kgSavedThisMonth={impact.ceMois}
+            kgSavedLastMonth={impact.moisDernier}
+            kgSavedAllTime={impact.total}
           />
         </Animated.View>
 
@@ -390,7 +392,7 @@ export default function HomeScreen() {
           />
 
           <View style={styles.notifList}>
-            {mockNotifications.slice(0, 3).map((notif) => (
+            {notifications.slice(0, 3).map((notif) => (
               <NotificationRow key={notif.id} notif={notif} colors={colors} />
             ))}
           </View>

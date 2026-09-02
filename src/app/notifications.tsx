@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaWrapper } from '@/components/layout/SafeAreaWrapper';
 import { Header } from '@/components/layout/Header';
 import { Card } from '@/components/ui/Card';
@@ -9,22 +9,36 @@ import { Typography } from '@/constants/Typography';
 import { Spacing } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useTranslation } from '@/hooks/useTranslation';
-import { mockNotifications } from '@/services/mock/notifications';
+import { useNotificationStore } from '@/stores/useNotificationStore';
 import { formatDateTime } from '@/utils/formatting';
 
 export default function NotificationsScreen() {
   const { colors } = useColorScheme();
   const { t } = useTranslation();
+  const { notifications, isLoading, erreur, charger, marquerCommeLue } = useNotificationStore();
+
+  useEffect(() => { void charger(); }, [charger]);
 
   return (
     <SafeAreaWrapper>
       <Header title={t('profile.notifications')} showBack />
+      {erreur && (
+        <View style={[styles.erreur, { borderColor: colors.error, backgroundColor: colors.error + '10' }]}>
+          <Text style={[styles.erreurTexte, { color: colors.error }]}>{erreur}</Text>
+        </View>
+      )}
       <FlatList
-        data={mockNotifications}
+        data={notifications}
+        refreshing={isLoading}
+        onRefresh={() => { void charger(); }}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => {
           const isNewDelivery = item.type === 'mission_new';
           return (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => { if (!item.read) void marquerCommeLue(item.id); }}
+            >
             <Card
               style={
                 isNewDelivery
@@ -49,6 +63,7 @@ export default function NotificationsScreen() {
                 </View>
               </View>
             </Card>
+            </TouchableOpacity>
           );
         }}
         contentContainerStyle={styles.list}
@@ -60,6 +75,8 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
+  erreur: { marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, borderWidth: 1, borderRadius: 8, padding: Spacing.md },
+  erreurTexte: { ...Typography.caption, lineHeight: 18 },
   list: {
     paddingBottom: Spacing.section,
   },

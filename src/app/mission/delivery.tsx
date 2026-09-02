@@ -24,9 +24,7 @@ import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { useMissionStore } from '@/stores/useMissionStore';
 import { useRouteStore } from '@/stores/useRouteStore';
-import { useEcoImpactStore } from '@/stores/useEcoImpactStore';
 import { isAfterTolerance, getToleranceWindow } from '@/utils/tolerance';
-import { calculateCo2Saved, estimateDistanceKm } from '@/utils/carbon';
 import { enregistrerScan, messageDeScan, nouvelleCle } from '@/services/scans';
 
 type DeliveryStep = 'approach' | 'scan-buyer' | 'scan-package' | 'confirmed';
@@ -40,7 +38,6 @@ export default function DeliveryScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { getMissionById, charger } = useMissionStore();
   const { routes } = useRouteStore();
-  const { registerDelivery } = useEcoImpactStore();
 
   const mission = getMissionById(id ?? '');
   const [step, setStep] = useState<DeliveryStep>('approach');
@@ -154,11 +151,10 @@ export default function DeliveryScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         showToast('Colis vérifié ✓', 'success');
         setEarningsReleased(true);
-        const route = routes.find((r2) => r2.id === mission.routeId);
-        const transportType = route?.transportType ?? 'car';
-        const distanceKm = estimateDistanceKm(mission.pickupHub.city, mission.deliveryHub.city);
-        const kgSaved = calculateCo2Saved(distanceKm, transportType);
-        if (kgSaved > 0) registerDelivery(kgSaved);
+        // ⚠️ PLUS D'ACCUMULATION EN MÉMOIRE ICI. L'impact se DÉRIVE des missions
+        // terminées (`impactEcologique`) : le `charger()` ci-dessous ramène celle
+        // qui vient de l'être, et le total se recalcule tout seul — y compris
+        // après un redémarrage, ce que le magasin sans persistance perdait.
         AccessibilityInfo.announceForAccessibility('Co-livraison confirmée. Paiement en cours de libération.');
         setStep('confirmed');
         checkScale.value = withSpring(1, { damping: 12, stiffness: 150 });

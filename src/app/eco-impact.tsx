@@ -7,7 +7,9 @@ import { SafeAreaWrapper } from '@/components/layout/SafeAreaWrapper';
 import { Header } from '@/components/layout/Header';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
-import { useEcoImpactStore } from '@/stores/useEcoImpactStore';
+import { impactCo2 } from '@/utils/impactEcologique';
+import { useMissionStore } from '@/stores/useMissionStore';
+import { useRouteStore } from '@/stores/useRouteStore';
 import { equivalence, formatCo2 } from '@/utils/carbon';
 import { Typography } from '@/constants/Typography';
 import { Spacing, BorderRadius } from '@/constants/Spacing';
@@ -35,8 +37,14 @@ function shortMonth(key: string): string {
 
 export default function EcoImpactScreen() {
   const { colors } = useColorScheme();
-  const { totalKgSavedAllTime, totalKgSavedThisMonth, monthlyHistory, deliveriesAllTime } =
-    useEcoImpactStore();
+  // 🔴 CALCULÉ SUR LES VRAIES CO-LIVRAISONS TERMINÉES — voir `impactEcologique`.
+  const { getCompletedMissions } = useMissionStore();
+  const { routes } = useRouteStore();
+  const impact = impactCo2(getCompletedMissions(), routes);
+  const totalKgSavedAllTime = impact.total;
+  const totalKgSavedThisMonth = impact.ceMois;
+  const monthlyHistory = impact.parMois;
+  const deliveriesAllTime = impact.livraisons;
 
   const history = [...monthlyHistory].sort((a, b) => a.month.localeCompare(b.month)).slice(-6);
   const maxKg = Math.max(0.1, ...history.map((h) => h.kgSaved));
