@@ -39,6 +39,7 @@ import { DailyConfirmation } from '@/components/route/DailyConfirmation';
 import { EcoImpactSummary } from '@/components/dashboard/EcoImpactSummary';
 import { AdBanner } from '@/components/dashboard/AdBanner';
 import { useEcoImpactStore } from '@/stores/useEcoImpactStore';
+import { tauxReussiteLabel } from '@/utils/tauxReussite';
 import type { Mission } from '@/types/mission';
 import type { PublishedRoute } from '@/types/route';
 
@@ -355,7 +356,7 @@ export default function HomeScreen() {
             />
             <StatBox
               label="Taux réussite"
-              value="96%"
+              value={tauxReussiteLabel(missions)}
               sub=""
               subColor={colors.success}
               colors={colors}
