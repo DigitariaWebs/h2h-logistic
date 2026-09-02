@@ -78,6 +78,28 @@ export function QRScanner({ onScan, onManualEntry, mode = 'seller-qr', instructi
     }
   }, [resetSignal]);
 
+  // 🔴 UN CODE APPARTIENT À UN SEUL SCAN. `pickup` et `delivery` rendent deux
+  // `<QRScanner>` dans deux branches de retour différentes, à la même position
+  // de l'arbre : React réconcilie par type et par position, donc c'est LA MÊME
+  // instance qui sert les deux étapes, et `manualCode` traversait le changement.
+  // Le code du vendeur (`SEL-…`) arrivait pré-rempli dans le champ « Numéro de
+  // colis », et celui de l'acheteur (`BUY-…`) de même à la remise.
+  //
+  // 🔴 CE N'ÉTAIT PAS QU'UNE GÊNE : « Valider » est actif puisque le champ n'est
+  // pas vide, et les deux écrans COMPTENT les échecs — trois, puis l'écran se
+  // verrouille sur « contactez le support ». Une valeur laissée là par l'étape
+  // d'avant pouvait donc consommer les essais de quelqu'un qui a le colis en
+  // main, devant le vendeur.
+  //
+  // ⚠️ ON EFFACE LE CODE, PAS LE MODE DE SAISIE. Remonter le composant avec une
+  // `key` effacerait aussi `showManual` — et renverrait vers la caméra quelqu'un
+  // qui vient de dicter parce que la sienne ne lit rien. Un code appartient à un
+  // scan ; le mode de saisie appartient à la personne.
+  useEffect(() => {
+    setManualCode('');
+    setScanned(false);
+  }, [mode]);
+
   // Scanning line animation
   const scanLineY = useSharedValue(0);
   useEffect(() => {
@@ -117,18 +139,13 @@ export function QRScanner({ onScan, onManualEntry, mode = 'seller-qr', instructi
 
   if (!permission) return null;
 
-  if (!permission.granted) {
-    return (
-      <View style={styles.permissionContainer}>
-        <Icon name="camera" size={56} color={colors.textSecondary} />
-        <Text style={[styles.permissionText, { color: colors.text }]}>
-          Autorisez l'accès à la caméra pour scanner les QR codes.
-        </Text>
-        <Button title="Autoriser la caméra" onPress={requestPermission} variant="gradient" />
-      </View>
-    );
-  }
-
+  // 🔴 LA SAISIE MANUELLE PASSE AVANT LE REFUS DE CAMÉRA, et c'était tout le
+  // défaut : les deux branches existaient, mais celle de la permission rendait
+  // la main en premier — donc celle-ci n'était jamais atteinte. Sans caméra
+  // autorisée, la dictée était inatteignable, au moment exact où elle sert.
+  //
+  // ⚠️ ET L'AUTRE APPLICATION LA PROMET : l'écran du vendeur imprime sous son QR
+  // « A dicter si le scan echoue ». On tenait une promesse à moitié.
   if (showManual) {
     return (
       <View style={[styles.manualContainer, { backgroundColor: colors.background }]}>
@@ -159,6 +176,30 @@ export function QRScanner({ onScan, onManualEntry, mode = 'seller-qr', instructi
         <Button title="Valider" onPress={handleManualSubmit} variant="gradient" disabled={!manualCode.trim()} />
         <TouchableOpacity onPress={() => { setShowManual(false); setScanned(false); }}>
           <Text style={[styles.backToScan, { color: colors.primary }]}>Retour au scanner</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.permissionContainer}>
+        <Icon name="camera" size={56} color={colors.textSecondary} />
+        <Text style={[styles.permissionText, { color: colors.text }]}>
+          Autorisez l'accès à la caméra pour scanner les QR codes.
+        </Text>
+        <Button title="Autoriser la caméra" onPress={requestPermission} variant="gradient" />
+        {/* 🔴 UNE ISSUE DEPUIS CET ÉCRAN-CI, ET PAS SEULEMENT DEPUIS LA CAMÉRA.
+            Le lien « Entrer le code manuellement » vit sous le viseur : le
+            remonter au-dessus du garde ne le rend atteignable que pour qui y
+            était déjà passé. Or sous Android un refus DÉFINITIF rend
+            `requestPermission()` sans effet — la boîte système ne s'ouvre plus.
+            Sans cette porte, l'écran ne proposait qu'un bouton mort, colis en
+            main, devant le vendeur. */}
+        <TouchableOpacity onPress={() => setShowManual(true)}>
+          <Text style={[styles.backToScan, { color: colors.primary }]}>
+            Entrer le code manuellement
+          </Text>
         </TouchableOpacity>
       </View>
     );
