@@ -68,6 +68,37 @@ export async function chargerMaConvention(): Promise<ConventionEnregistree | nul
 }
 
 /**
+ * La version, réduite à ce qu'un nom d'objet de stockage accepte.
+ *
+ * 🔴 LA SIGNATURE NE PARTAIT PAS, ET LA CONVENTION N'ÉTAIT JAMAIS ENREGISTRÉE.
+ * `CONVENTION_TRANSPORTEUR_VERSION` vaut « v1.0 — 2026-05-21 » : un tiret CADRATIN
+ * (U+2014) et deux espaces. Supabase Storage refuse la clé telle quelle —
+ *
+ *     signature : Invalid key: <profil>/transporter/v1.0 — 2026-05-21.txt
+ *
+ * — et `signerConvention` s'arrêtait là, donc AUCUN cotransporteur ne pouvait
+ * terminer son inscription. Constaté à l'émulateur le 02/09/2026, au premier
+ * passage réel dans cet écran.
+ *
+ * ⚠️ `encodeURIComponent` NE SUFFISAIT PAS, et c'est ce qui rendait le défaut
+ * discret : il transformait la version en `v1.0%20%E2%80%94%20…`, donc en une
+ * clé pleine de `%` — refusée elle aussi. Le code AVAIT l'air de traiter le
+ * problème.
+ *
+ * ⚠️ SEUL LE NOM DE FICHIER CHANGE. La policy de stockage compare
+ * `storage.foldername(name)[1]` au profil courant : le premier segment reste le
+ * `profile_id`, donc le contrôle d'accès est intact. Et `signature_path` garde
+ * en base EXACTEMENT ce qui a été téléversé, donc la relecture suit.
+ */
+function versionPourChemin(version: string): string {
+  return version
+    .normalize('NFKD')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
+/**
  * Signer la convention.
  *
  * 🔴 LE TRACÉ PART DANS `signatures`, PAS DANS LA LIGNE. `signature_path` est
@@ -90,7 +121,7 @@ export async function signerConvention(input: {
   prelevementAutorise: boolean;
 }): Promise<ConventionEnregistree> {
   const version = CONVENTION_TRANSPORTEUR_VERSION;
-  const chemin = `${input.profilId}/transporter/${encodeURIComponent(version)}.txt`;
+  const chemin = `${input.profilId}/transporter/${versionPourChemin(version)}.txt`;
 
   const { error: erreurDepot } = await supabase.storage
     .from('signatures')
