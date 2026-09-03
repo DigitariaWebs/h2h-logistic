@@ -21,6 +21,14 @@ import { Toast } from '@/components/ui/Toast';
 import { Typography } from '@/constants/Typography';
 import { Spacing, BorderRadius } from '@/constants/Spacing';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { useAuthStore } from '@/stores/useAuthStore';
+import {
+  ouvrirFil,
+  chargerMessages,
+  envoyerMessage,
+  marquerLu,
+  type Interlocuteur,
+} from '@/services/messagerie';
 
 type MessageType = 'text' | 'call-summary' | 'image';
 
@@ -41,12 +49,12 @@ const QUICK_REPLIES = [
   'Merci !',
 ];
 
-// Mock messages
-const MOCK_MESSAGES: Message[] = [
-  { id: '1', type: 'text', text: 'Bonjour ! Le colis est prêt au hub.', fromMe: false, time: '14:22' },
-  { id: '2', type: 'text', text: 'Parfait, je suis en route.', fromMe: true, time: '14:23' },
-  { id: '3', type: 'text', text: "D'accord, à tout de suite !", fromMe: false, time: '14:24' },
-];
+// 🔴 TROIS MESSAGES DE DÉMONSTRATION OUVRAIENT CHAQUE CONVERSATION —
+// « Bonjour ! Le colis est prêt au hub. » — y compris celles où personne
+// n'avait jamais écrit. On part d'un fil vide, et on charge ce qui existe.
+
+const heure = (iso: string) =>
+  new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
 export default function ChatScreen() {
   const params = useLocalSearchParams<{
@@ -63,9 +71,58 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
 
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES);
+  const moiId = useAuthStore((e) => e.user?.id ?? null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [filId, setFilId] = useState<string | null>(null);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
   const [input, setInput] = useState('');
   const [showVideoTip, setShowVideoTip] = useState(false);
+
+  // 🔴 LE FIL VIENT DE LA BASE. `ouvrir_fil_colivraison` le crée à la
+  // première ouverture et le retrouve ensuite ; le serveur décide qui a le
+  // droit de l'ouvrir, et refuse plutôt que de rediriger.
+  //
+  // ⚠️ UNE ERREUR SE DIT. Un fil vide et un fil refusé finissent tous deux sur
+  // une liste vide : sans ce message, le cotransporteur conclurait que
+  // personne ne lui a répondu.
+  useEffect(() => {
+    if (!params.missionId || (role !== 'seller' && role !== 'buyer')) {
+      setChargement(false);
+      setErreur('Conversation indisponible pour cette co-livraison.');
+      return;
+    }
+    let vivant = true;
+    setChargement(true);
+    (async () => {
+      try {
+        const fil = await ouvrirFil(params.missionId as string, role as Interlocuteur);
+        const lignes = await chargerMessages(fil, moiId);
+        if (!vivant) return;
+        setFilId(fil);
+        setMessages(
+          lignes.map((l) => ({
+            id: l.id,
+            type: 'text' as MessageType,
+            text: l.texte ?? '',
+            fromMe: l.deMoi,
+            time: heure(l.envoyeLe),
+          })),
+        );
+        setErreur(null);
+        void marquerLu(fil).catch(() => {
+          /* ⚠️ NE PAS FAIRE ÉCHOUER L'AFFICHAGE POUR UNE PASTILLE. */
+        });
+      } catch (e) {
+        console.error('[chat] fil indisponible', e);
+        if (vivant) setErreur(e instanceof Error ? e.message : 'Conversation indisponible.');
+      } finally {
+        if (vivant) setChargement(false);
+      }
+    })();
+    return () => { vivant = false; };
+  }, [params.missionId, role, moiId]);
 
   // When returning from a call, append a call-summary message
   useEffect(() => {
@@ -84,38 +141,42 @@ export default function ChatScreen() {
     }
   }, [params.callDuration]);
 
-  const sendMessage = (text: string) => {
-    if (!text.trim()) return;
+  // 🔴 L'ÉCRAN FABRIQUAIT LA RÉPONSE DE L'AUTRE. Deux secondes après l'envoi,
+  // un `setTimeout` ajoutait « Bien reçu, merci ! » ou « Je vous attends au hub »
+  // au nom du vendeur. Rien n'était parti, personne n'avait répondu — et un
+  // cotransporteur qui lit « Je vous attends au hub » va au hub.
+  //
+  // ⚠️ ON AFFICHE CE QUE LA BASE A ÉCRIT, pas ce qu'on a tapé : la RLS peut
+  // refuser l'envoi (fil étranger, contact bloqué), et l'écran doit l'apprendre
+  // plutôt que de montrer un message que personne ne recevra.
+  const sendMessage = async (text: string) => {
+    const propre = text.trim();
+    if (!propre || !filId || !moiId || envoiEnCours) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    const newMsg: Message = {
-      id: `msg-${Date.now()}`,
-      type: 'text',
-      text: text.trim(),
-      fromMe: true,
-      time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-    };
-    setMessages((prev) => [...prev, newMsg]);
+    setEnvoiEnCours(true);
     setInput('');
-
-    setTimeout(() => {
-      const replies = [
-        'Bien reçu, merci !',
-        "D'accord, pas de souci.",
-        'Je vous attends au hub.',
-        'Parfait !',
-      ];
-      const reply: Message = {
-        id: `msg-reply-${Date.now()}`,
-        type: 'text',
-        text: replies[Math.floor(Math.random() * replies.length)],
-        fromMe: false,
-        time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, reply]);
-    }, 2000);
-
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    try {
+      const envoye = await envoyerMessage(filId, moiId, propre);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: envoye.id,
+          type: 'text' as MessageType,
+          text: envoye.texte ?? propre,
+          fromMe: true,
+          time: heure(envoye.envoyeLe),
+        },
+      ]);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+    } catch (e) {
+      // ⚠️ ON REND SON TEXTE À L'EXPÉDITEUR. Le perdre en même temps que
+      // l'envoi obligerait à le retaper, souvent sous la pluie.
+      console.error('[chat] envoi impossible', e);
+      setInput(propre);
+      Alert.alert('Message non envoyé', e instanceof Error ? e.message : 'Réessayez.');
+    } finally {
+      setEnvoiEnCours(false);
+    }
   };
 
   const appendImage = (uri: string) => {
