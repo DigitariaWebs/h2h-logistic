@@ -177,3 +177,29 @@ test('⚠️ ET LES SIX MOTIFS DE L’ÉCRAN SONT CEUX DE LA BASE', () => {
     );
   }
 });
+
+test('🔴 ON NE PROPOSE PAS DE SIGNALER UN HUB QUAND IL N’Y A PAS DE HUB', () => {
+  // 🔴 L'AFFORDANCE ÉTAIT OFFERTE SANS CONDITION. Un rendez-vous hors hub porte
+  // `id: ''` (voir `pointDeRencontre`), et l'écran de signalement commence par
+  // `if (!reason || !hubId || !hubName) return;` — l'appui ne faisait donc RIEN,
+  // sans un mot. Une action proposée qui n'agit pas est pire qu'une action
+  // absente : on croit avoir signalé.
+  //
+  // ⚠️ ET C'EST LE CAS DE TOUTES LES CO-LIVRAISONS AUJOURD'HUI : `public.hubs`
+  // est vide tant que personne n'a candidaté.
+  const src = codeSeul(lire('src/app/mission/group.tsx'));
+  assert.ok(
+    /hubsSignalables\s*=\s*\[mission\.pickupHub, mission\.deliveryHub\]\.filter\(\(h\) => !!h\.id\)/.test(src),
+    'les points de rendez-vous sans hub ne sont plus écartés',
+  );
+  assert.ok(
+    /\{hubsSignalables\.length > 0 && \(/.test(src),
+    'le lien « Signaler un hub » est de nouveau offert sans hub',
+  );
+  // ⚠️ ET LES OPTIONS VIENNENT DE LA LISTE, pas d'un couple écrit en dur :
+  // sinon une entrée resterait morte quand un seul des deux est un hub.
+  assert.ok(
+    /\.\.\.hubsSignalables\.map\(/.test(src),
+    'les options de l’alerte sont de nouveau écrites en dur',
+  );
+});

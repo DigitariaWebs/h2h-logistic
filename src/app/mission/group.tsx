@@ -227,6 +227,18 @@ function GroupContent({ mission, colors, router, insets }: { mission: Mission; c
   // ⚠️ CE FICHIER SAVAIT DÉJÀ ÉCRIRE LA BONNE CONDITION : partout ailleurs il
   // apparie `group_created` et `pickup_pending`. Ces deux lignes étaient les
   // seules à ne nommer que le statut orphelin — un oubli, pas une intention.
+  // 🔴 « SIGNALER UN HUB » ÉTAIT OFFERT MÊME QUAND IL N'Y AVAIT PAS DE HUB.
+  // Un rendez-vous hors hub porte `id: ''` (voir `pointDeRencontre` dans
+  // `services/missions`), et l'écran de signalement commence par
+  // `if (!reason || !hubId || !hubName) return;` — l'appui ne faisait donc
+  // RIEN, sans un mot. Une action proposée qui n'agit pas est pire qu'une
+  // action absente : on croit avoir signalé.
+  //
+  // ⚠️ ET AUJOURD'HUI C'EST LE CAS DE TOUTES LES CO-LIVRAISONS : `public.hubs`
+  // est vide tant que personne n'a candidaté, donc aucune mission n'a de hub.
+  // Le lien réapparaîtra de lui-même le jour où les hubs embarqueront.
+  const hubsSignalables = [mission.pickupHub, mission.deliveryHub].filter((h) => !!h.id);
+
   const isPickupLate = attenteDepassee(
     {
       statut: mission.status,
@@ -426,36 +438,27 @@ function GroupContent({ mission, colors, router, insets }: { mission: Mission; c
             <Text style={[gs.offHubLink, { color: colors.primary }]}>Proposer hors hub</Text>
           </TouchableOpacity>
         )}
+        {hubsSignalables.length > 0 && (
         <TouchableOpacity
           onPress={() => {
+            // ⚠️ LES OPTIONS SE CONSTRUISENT SUR LA LISTE FILTRÉE. Les écrire en
+            // dur laisserait une entrée morte quand un seul des deux points de
+            // rendez-vous est un hub — le défaut d'avant, en plus discret.
             Alert.alert('Signaler un hub', 'Quel hub souhaitez-vous signaler ?', [
-              {
-                text: `Hub vendeur — ${mission.pickupHub.name}`,
+              ...hubsSignalables.map((h) => ({
+                text: `${h === mission.pickupHub ? 'Hub vendeur' : 'Hub acheteur'} — ${h.name}`,
                 onPress: () =>
                   router.push({
                     pathname: '/hub/report' as any,
                     params: {
-                      hubId: mission.pickupHub.id,
-                      hubName: mission.pickupHub.name,
-                      hubAddress: mission.pickupHub.city,
+                      hubId: h.id,
+                      hubName: h.name,
+                      hubAddress: h.city,
                       missionId: mission.id,
                     },
                   }),
-              },
-              {
-                text: `Hub acheteur — ${mission.deliveryHub.name}`,
-                onPress: () =>
-                  router.push({
-                    pathname: '/hub/report' as any,
-                    params: {
-                      hubId: mission.deliveryHub.id,
-                      hubName: mission.deliveryHub.name,
-                      hubAddress: mission.deliveryHub.city,
-                      missionId: mission.id,
-                    },
-                  }),
-              },
-              { text: 'Annuler', style: 'cancel' },
+              })),
+              { text: 'Annuler', style: 'cancel' as const },
             ]);
           }}
           hitSlop={12}
@@ -464,6 +467,7 @@ function GroupContent({ mission, colors, router, insets }: { mission: Mission; c
         >
           <Text style={[gs.offHubLink, { color: colors.textSecondary }]}>Signaler un hub</Text>
         </TouchableOpacity>
+        )}
         {!canProposeOffHub && !mission.offHubProposal && (
           <Text style={[gs.offHubDisabled, { color: colors.textSecondary }]}>Le hors hub n'est plus disponible.</Text>
         )}
