@@ -39,7 +39,11 @@ const COPY: Record<ScannerMode, { instruction: string; subtitle: string; manualT
     manualTitle: 'Code vendeur',
     manualSub: 'Entrez le code communiqué par le vendeur',
     manualLabel: 'Code vendeur',
-    manualPlaceholder: 'HTH-XXXXX',
+    // 🔴 `SEL-` + SIX caracteres — la forme que pose `app.code_lisible`.
+    // L'exemple disait `HTH-XXXXX` sur les TROIS modes : mauvais prefixe,
+    // mauvaise longueur, et le meme exemple pour trois codes differents. Il
+    // venait d'un commentaire perime du schema d'origine.
+    manualPlaceholder: 'SEL-XXXXXX',
   },
   'buyer-qr': {
     instruction: "Scannez le QR code de l'acheteur",
@@ -47,7 +51,7 @@ const COPY: Record<ScannerMode, { instruction: string; subtitle: string; manualT
     manualTitle: 'Code acheteur',
     manualSub: "Entrez le code communiqué par l'acheteur",
     manualLabel: 'Code acheteur',
-    manualPlaceholder: 'HTH-XXXXX',
+    manualPlaceholder: 'BUY-XXXXXX',
   },
   'package': {
     instruction: "Scannez la fiche colis",
@@ -55,7 +59,10 @@ const COPY: Record<ScannerMode, { instruction: string; subtitle: string; manualT
     manualTitle: 'Numéro de colis',
     manualSub: 'Entrez le numéro inscrit sur la fiche colis',
     manualLabel: 'Numéro de colis',
-    manualPlaceholder: 'HTH-XXXXX',
+    // ⚠️ SANS TIRET, ET DIX CARACTERES. C'est le numero de suivi, pas un code
+    // a six lettres comme les deux autres : la base contraint sa forme depuis
+    // les migrations du 22/08/2026.
+    manualPlaceholder: 'HTHXXXXXXXXXX',
   },
 };
 

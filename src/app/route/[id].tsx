@@ -18,6 +18,7 @@ import { useRouteStore } from '@/stores/useRouteStore';
 import { useMissionStore } from '@/stores/useMissionStore';
 import { ACTIVE_STATUSES } from '@/types/mission';
 import { formatCurrency, formatDate } from '@/utils/formatting';
+import { participationMoyenneLabel } from '@/utils/participationMoyenne';
 
 const DAYS_SHORT: Record<number, string> = { 1: 'Lun', 2: 'Mar', 3: 'Mer', 4: 'Jeu', 5: 'Ven', 6: 'Sam', 7: 'Dim' };
 
@@ -66,7 +67,17 @@ export default function RouteDetailScreen() {
   const transport = TRANSPORT_TYPES.find((t) => t.id === route.transportType);
   const isActive = route.status === 'active';
   const hasMission = hasActiveMission(route.id);
-  const avgEarnings = route.missionsCount > 0 ? 4.5 : 0; // mock average
+  // 🔴 CE CHIFFRE ÉTAIT ÉCRIT EN DUR : `route.missionsCount > 0 ? 4.5 : 0`,
+  // avec `// mock average` en bout de ligne. Deux valeurs possibles pour tous
+  // les trajets de tous les cotransporteurs, sans lien avec les participations
+  // réellement perçues — que chaque mission porte pourtant.
+  //
+  // 🔴 ET LA TUILE VOISINE EST VRAIE : « Co-livraisons » lit
+  // `route.missionsCount`. Un chiffre mesuré à gauche, un chiffre inventé à
+  // droite, et rien pour les distinguer. Même famille que le « 96% Taux
+  // réussite » — mais ici c'est de l'argent, donc ce qu'on croit avoir gagné.
+  const missionsDuTrajet = missions.filter((m) => m.routeId === route.id);
+  const participationLabel = participationMoyenneLabel(missionsDuTrajet);
 
   // ─── Participants per hubId from active missions on this route ───
   // (calculé plus haut, avant la garde — voir la note.)
@@ -165,7 +176,7 @@ export default function RouteDetailScreen() {
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Co-livraisons</Text>
           </Card>
           <Card style={styles.statCard}>
-            <Text style={[styles.statValue, { color: colors.success }]}>{formatCurrency(avgEarnings)}</Text>
+            <Text style={[styles.statValue, { color: colors.success }]}>{participationLabel}</Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Participation moyenne</Text>
           </Card>
         </View>

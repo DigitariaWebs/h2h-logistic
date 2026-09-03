@@ -21,6 +21,7 @@ import { EcoImpactCard } from '@/components/mission/EcoImpactCard';
 import { AdBanner } from '@/components/dashboard/AdBanner';
 import { useRouteStore } from '@/stores/useRouteStore';
 import { calculateCo2Saved, estimateDistanceKm } from '@/utils/carbon';
+import { attenteDepassee } from '@/utils/retardAuRendezVous';
 import { OffHubProposalSheet } from '@/components/logistics/OffHubProposal';
 import { SupportDecisionCard } from '@/components/mission/SupportDecisionCard';
 import { Typography } from '@/constants/Typography';
@@ -217,8 +218,31 @@ function GroupContent({ mission, colors, router, insets }: { mission: Mission; c
     ]);
   };
 
-  const isPickupLate = mission.status === 'pickup_pending' && dayjs().isAfter(dayjs(mission.pickupHub.scheduledTime).add(mission.pickupHub.toleranceMinutes, 'minute'));
-  const isDeliveryLate = mission.status === 'delivery_pending' && dayjs().isAfter(dayjs(mission.deliveryHub.scheduledTime).add(mission.deliveryHub.toleranceMinutes, 'minute'));
+  // 🔴 CES DEUX ALERTES NE POUVAIENT PAS S'AFFICHER. Elles étaient
+  // conditionnées à `pickup_pending` et `delivery_pending` — deux statuts
+  // qu'une co-livraison n'atteint jamais : la récupération va de
+  // `seller_confirmed` droit à `picked_up`, et la remise de `in_transit` droit
+  // à `delivered`. Le vendeur ne venait pas, et l'écran se taisait.
+  //
+  // ⚠️ CE FICHIER SAVAIT DÉJÀ ÉCRIRE LA BONNE CONDITION : partout ailleurs il
+  // apparie `group_created` et `pickup_pending`. Ces deux lignes étaient les
+  // seules à ne nommer que le statut orphelin — un oubli, pas une intention.
+  const isPickupLate = attenteDepassee(
+    {
+      statut: mission.status,
+      heurePrevue: mission.pickupHub.scheduledTime,
+      toleranceMinutes: mission.pickupHub.toleranceMinutes,
+    },
+    'pickup',
+  );
+  const isDeliveryLate = attenteDepassee(
+    {
+      statut: mission.status,
+      heurePrevue: mission.deliveryHub.scheduledTime,
+      toleranceMinutes: mission.deliveryHub.toleranceMinutes,
+    },
+    'delivery',
+  );
 
   return (
     <View style={[gs.screen, { backgroundColor: colors.background }]}>
