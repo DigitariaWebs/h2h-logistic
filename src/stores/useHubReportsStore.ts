@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import type { HubReportPayload, HubReportReason } from '@/services/mock/hubReports';
-import { submitHubReport } from '@/services/mock/hubReports';
+// 🔴 `submitHubReport` ATTENDAIT UNE SECONDE ET RENDAIT UN IDENTIFIANT
+// FABRIQUÉ. Rien ne partait, et l'écran remerciait. Les libellés des motifs
+// restent côté écran — ils n'ont jamais été le défaut.
+import { signalerHub } from '@/services/signalements';
 
 export interface HubReportRecord {
   id: string;
@@ -26,7 +29,16 @@ export const useHubReportsStore = create<HubReportsState>((set, get) => ({
   submit: async (payload) => {
     set({ isSubmitting: true });
     try {
-      const result = await submitHubReport(payload);
+      // 🔴 LE SIGNALEMENT PART VRAIMENT, et on garde l identifiant que la BASE
+      // a ecrit : une reference fabriquee localement ne permet ni de retrouver
+      // le dossier, ni de prouver qu on a signale.
+      const envoye = await signalerHub({
+        hubId: payload.hubId,
+        motif: payload.reason,
+        explication: payload.notes,
+        missionId: payload.missionId ?? null,
+      });
+      const result = { id: envoye.id, createdAt: envoye.creeLe };
       const record: HubReportRecord = {
         id: result.id,
         createdAt: result.createdAt,

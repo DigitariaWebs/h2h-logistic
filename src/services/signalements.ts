@@ -59,3 +59,44 @@ export async function signalerUtilisateur(
   if (!l?.id) throw new Error('Signalement non enregistré');
   return { id: l.id, creeLe: l.created_at };
 }
+
+export type SignalementHub = {
+  hubId: string;
+  /** Le motif tel que l'écran le nomme — l'énumération est déjà la bonne. */
+  motif: string;
+  /** Facultatif : « hub fermé » se suffit. */
+  explication?: string;
+  /** La co-livraison qui a amené le signalant là, s'il y en a une. */
+  missionId?: string | null;
+};
+
+/**
+ * Signale un hub.
+ *
+ * 🔴 CE QUE ÇA REMPLACE : `submitHubReport`, une seconde d'attente et un
+ * identifiant fabriqué. Parmi les motifs proposés : « Problème de sécurité ».
+ *
+ * ⚠️ LES SIX MOTIFS DE L'ÉCRAN SONT DÉJÀ CEUX DE `hub_report_reason` — la table
+ * a été écrite d'après eux. Il n'y a donc rien à traduire ici, contrairement aux
+ * signalements de personne où les deux vocabulaires divergent.
+ *
+ * ⚠️ ET LA COPIE DU HUB EST GELÉE PAR LE SERVEUR, pas envoyée d'ici : un hub
+ * déménage, et l'appelant ne doit pas pouvoir décrire un hub qui n'a jamais
+ * existé.
+ */
+export async function signalerHub(
+  s: SignalementHub,
+): Promise<{ id: string; creeLe: string }> {
+  const { data, error } = await supabase.rpc('signaler_hub', {
+    p_hub_id: s.hubId,
+    p_reason: s.motif,
+    p_explanation: s.explication?.trim() || null,
+    p_mission_id: s.missionId ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const l = (Array.isArray(data) ? data[0] : data) as
+    | { id: string; created_at: string }
+    | null;
+  if (!l?.id) throw new Error('Signalement non enregistré');
+  return { id: l.id, creeLe: l.created_at };
+}

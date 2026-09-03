@@ -30,10 +30,11 @@ const MAX_NOTE_LENGTH = 600;
 export default function HubReportScreen() {
   const { colors } = useColorScheme();
   const router = useRouter();
-  const { hubId, hubName, hubAddress } = useLocalSearchParams<{
+  const { hubId, hubName, hubAddress, missionId } = useLocalSearchParams<{
     hubId: string;
     hubName: string;
     hubAddress?: string;
+    missionId?: string;
   }>();
   const { submit, isSubmitting } = useHubReportsStore();
 
@@ -70,13 +71,27 @@ export default function HubReportScreen() {
   const handleSubmit = async () => {
     if (!reason || !hubId || !hubName) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await submit({
-      hubId,
-      hubName,
-      reason,
-      notes: notes.trim() || undefined,
-      photoUris: photos.length > 0 ? photos : undefined,
-    });
+    // 🔴 ON NE REMERCIE PLUS AVANT DE SAVOIR. Le message de succès était
+    // affiché sans condition — ce qui allait de soi tant que l'envoi était
+    // simulé et ne pouvait pas échouer. Il part vraiment maintenant, et un
+    // refus doit se voir : « nous vous tiendrons informé » sur un signalement
+    // que personne n'a reçu est exactement le défaut qu'on vient de corriger.
+    try {
+      await submit({
+        hubId,
+        hubName,
+        reason,
+        missionId: missionId || undefined,
+        notes: notes.trim() || undefined,
+        photoUris: photos.length > 0 ? photos : undefined,
+      });
+    } catch (e) {
+      // ⚠️ ET ON GARDE CE QUI A ÉTÉ SAISI : on ne resignale pas de bon coeur,
+      // surtout debout devant une porte fermée.
+      console.error('[hub] signalement impossible', e);
+      setToast(e instanceof Error ? e.message : 'Signalement non envoyé. Réessayez.');
+      return;
+    }
     setToast('Merci, votre retour nous aide à améliorer le service. Nous vous tiendrons informé si besoin.');
     setReason(null);
     setNotes('');

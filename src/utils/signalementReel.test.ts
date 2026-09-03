@@ -122,3 +122,58 @@ test('🔴 LE SIGNALEMENT PORTE LA CONVERSATION D’OÙ IL VIENT', () => {
   const service = codeSeul(lire('src/services/signalements.ts'));
   assert.ok(/p_conversation_id/.test(service), 'la conversation n’arrive pas jusqu’à la base');
 });
+
+// ── SIGNALER UN HUB ─────────────────────────────────────────────────────────
+
+test('🔴 LE SIGNALEMENT DE HUB N’UTILISE PLUS L’ENVOI SIMULÉ', () => {
+  const store = codeSeul(lire('src/stores/useHubReportsStore.ts'));
+  assert.ok(
+    !/submitHubReport/.test(store),
+    'le magasin rappelle l’envoi simulé : le signalement de hub ne part pas',
+  );
+  assert.ok(/signalerHub\(/.test(store), 'le magasin n’envoie plus le signalement de hub');
+});
+
+test('🔴 ET L’ÉCRAN HUB NE REMERCIE PLUS AVANT DE SAVOIR', () => {
+  // 🔴 « Nous vous tiendrons informé si besoin » SUR UN SIGNALEMENT QUE PERSONNE
+  // N'A REÇU. Le message était affiché sans condition, ce qui allait de soi tant
+  // que l'envoi ne pouvait pas échouer.
+  const src = codeSeul(lire('src/app/hub/report.tsx'));
+  const bloc = src.slice(src.indexOf('const handleSubmit'));
+  const iCatch = bloc.indexOf('catch');
+  const iMerci = bloc.indexOf('Merci, votre retour');
+  assert.notEqual(iCatch, -1, 'un envoi refusé passe en silence');
+  assert.ok(iCatch < iMerci, 'le remerciement est hors du chemin qui peut échouer');
+});
+
+test('⚠️ UN ÉCHEC NE VIDE PAS LE FORMULAIRE DE HUB', () => {
+  const src = codeSeul(lire('src/app/hub/report.tsx'));
+  const bloc = src.slice(src.indexOf('const handleSubmit'));
+  const catchBloc = bloc.slice(bloc.indexOf('catch'), bloc.indexOf('Merci, votre retour'));
+  assert.ok(!/setReason\(null\)/.test(catchBloc), 'le motif est efface apres un echec');
+  assert.ok(!/setNotes\(''\)/.test(catchBloc), 'les notes sont perdues apres un echec');
+});
+
+test('⚠️ LE SIGNALEMENT DE HUB PORTE SA CO-LIVRAISON', () => {
+  // ⚠️ CONTEXTE, PAS IDENTITÉ : le support veut savoir quel rendez-vous a
+  // échoué, pas seulement qu'un hub était fermé un jour.
+  const groupe = codeSeul(lire('src/app/mission/group.tsx'));
+  assert.ok(/missionId: mission\.id/.test(groupe), 'la mission n’est pas transmise au signalement');
+  const service = codeSeul(lire('src/services/signalements.ts'));
+  assert.ok(/p_mission_id/.test(service), 'la mission n’arrive pas jusqu’à la base');
+});
+
+test('⚠️ ET LES SIX MOTIFS DE L’ÉCRAN SONT CEUX DE LA BASE', () => {
+  // ⚠️ RIEN À TRADUIRE ICI, contrairement aux signalements de personne : la
+  // table `hub_report_reason` a été écrite d'après cet écran. Si les deux
+  // divergeaient, un motif partirait comme une valeur d'énumération inconnue et
+  // la base refuserait le signalement — debout devant une porte fermée.
+  const mock = lire('src/services/mock/hubReports.ts');
+  for (const motif of ['closed', 'wrong_address', 'saturated', 'security',
+                       'partner_uncooperative', 'other']) {
+    assert.ok(
+      new RegExp(`'${motif}'`).test(mock),
+      `le motif ${motif} a disparu de l’écran : la base l’attend encore`,
+    );
+  }
+});

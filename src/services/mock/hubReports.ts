@@ -17,6 +17,13 @@ export const HUB_REPORT_REASONS: { id: HubReportReason; label: string }[] = [
 
 export interface HubReportPayload {
   hubId: string;
+  /**
+   * La co-livraison qui a amene le signalant la, quand il y en a une.
+   *
+   * ⚠️ CONTEXTE, PAS IDENTITE : le support veut savoir quel rendez-vous a
+   * echoue, pas seulement que le hub etait ferme un jour.
+   */
+  missionId?: string;
   hubName: string;
   reason: HubReportReason;
   notes?: string;
