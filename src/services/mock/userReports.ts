@@ -72,6 +72,14 @@ export interface UserReportPayload {
   reportedUserName: string;
   reportedRole: 'seller' | 'buyer';
   missionId?: string;
+  /**
+   * 🔴 LA CONVERSATION D'OÙ VIENT LE SIGNALEMENT.
+   *
+   * Sans elle, le support reçoit « comportement agressif » sans une ligne de
+   * ce qui a été écrit. `signaler_utilisateur` sait la rattacher ; il fallait
+   * encore la lui donner.
+   */
+  conversationId?: string;
   reason: UserReportReason;
   description?: string;
   photoUris?: string[];

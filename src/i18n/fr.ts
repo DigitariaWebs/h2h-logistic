@@ -220,6 +220,7 @@ export const fr = {
     goodFaith: 'J’atteste que ce signalement est fait de bonne foi.',
     submit: 'Envoyer le signalement',
     successToast: 'Signalement envoyé.',
+    errorToast: 'Signalement non envoyé. Réessayez.',
     counter: '{count}/{max}',
   },
   support: {

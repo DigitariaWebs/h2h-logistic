@@ -217,6 +217,7 @@ export const en: TranslationKeys = {
     goodFaith: 'I certify that this report is made in good faith.',
     submit: 'Send the report',
     successToast: 'Report sent.',
+    errorToast: 'Report not sent. Please try again.',
     counter: '{count}/{max}',
   },
   support: {

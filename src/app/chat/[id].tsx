@@ -246,6 +246,7 @@ export default function ChatScreen() {
         reportedUserName: name ?? '',
         reportedRole: role === 'seller' ? 'seller' : 'buyer',
         missionId: params.missionId ?? '',
+        conversationId: filId ?? '',
       },
     });
   };

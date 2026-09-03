@@ -40,11 +40,15 @@ export default function UserReportScreen() {
     reportedUserName: string;
     reportedRole: string;
     missionId?: string;
+    conversationId?: string;
   }>();
   const reportedUserId = params.reportedUserId ?? '';
   const reportedUserName = params.reportedUserName ?? '';
   const reportedRole: 'seller' | 'buyer' = params.reportedRole === 'seller' ? 'seller' : 'buyer';
   const missionId = params.missionId || undefined;
+  // 🔴 LA CONVERSATION D'OÙ VIENT LE SIGNALEMENT. Sans elle, le support
+  // reçoit « comportement agressif » sans une ligne de ce qui a été écrit.
+  const conversationId = params.conversationId || undefined;
 
   const { submit, isSubmitting } = useUserReportsStore();
 
@@ -81,16 +85,30 @@ export default function UserReportScreen() {
   const handleSubmit = async () => {
     if (!reason || !goodFaith || !reportedUserId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await submit({
-      reportedUserId,
-      reportedUserName,
-      reportedRole,
-      missionId,
-      reason,
-      description: description.trim() || undefined,
-      photoUris: photos.length > 0 ? photos : undefined,
-      goodFaith: true,
-    });
+    // 🔴 ON NE FÉLICITE PLUS AVANT DE SAVOIR. Le succès était annoncé sans
+    // condition — ce qui allait de soi tant que l'envoi était simulé et ne
+    // pouvait pas échouer. Maintenant qu'il part vraiment, un refus doit se
+    // voir : annoncer « signalement envoyé » sur un envoi refusé serait
+    // exactement le défaut qu'on vient de corriger, sous une autre forme.
+    try {
+      await submit({
+        reportedUserId,
+        reportedUserName,
+        reportedRole,
+        missionId,
+        conversationId,
+        reason,
+        description: description.trim() || undefined,
+        photoUris: photos.length > 0 ? photos : undefined,
+        goodFaith: true,
+      });
+    } catch (e) {
+      // ⚠️ ON GARDE CE QUI A ÉTÉ SAISI. Vider le formulaire après un échec
+      // obligerait à tout réécrire — et on ne signale pas deux fois de bon coeur.
+      console.error('[signalement] envoi impossible', e);
+      setToast(e instanceof Error ? e.message : t('report.errorToast'));
+      return;
+    }
     setToast(t('report.successToast'));
     setReason(null);
     setDescription('');

@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import type { UserReportPayload, UserReportReason } from '@/services/mock/userReports';
-import { submitUserReport, getUserReportReason, isSupportReason } from '@/services/mock/userReports';
+// 🔴 `submitUserReport` ATTENDAIT UNE SECONDE ET RENDAIT UN IDENTIFIANT
+// FABRIQUÉ. Rien n'était envoyé ; le signalant voyait un ecran de succès et une
+// référence qui n'existe nulle part. Les libellés et le routage support, eux,
+// restent : ce sont des données d'écran, et elles n'ont jamais été le défaut.
+import { getUserReportReason, isSupportReason } from '@/services/mock/userReports';
+import { signalerUtilisateur } from '@/services/signalements';
 import { useMissionStore } from '@/stores/useMissionStore';
 
 export type SupportStatus = 'new' | 'in_review' | 'resolved';
@@ -77,7 +82,20 @@ export const useUserReportsStore = create<UserReportsState>((set, get) => ({
   submit: async (payload) => {
     set({ isSubmitting: true });
     try {
-      const result = await submitUserReport(payload);
+      // 🔴 LE SIGNALEMENT PART VRAIMENT, et on garde l'identifiant que la BASE
+      // a écrit : une référence fabriquée localement ne permet ni de retrouver le
+      // dossier, ni de prouver qu'on a signalé.
+      const envoye = await signalerUtilisateur({
+        utilisateurId: payload.reportedUserId,
+        motif: payload.reason,
+        explication: payload.description ?? '',
+        conversationId: payload.conversationId ?? null,
+        // ⚠️ ON NE BLOQUE PAS DANS LE MÊME GESTE : l'écran ne le propose pas,
+        // et bloquer sans l'avoir demandé fermerait un fil dont le support
+        // peut avoir besoin.
+        bloquerEnsuite: false,
+      });
+      const result = { id: envoye.id, createdAt: envoye.creeLe };
       // Support/priority motifs open a « dossier support »; classic ones don't
       // block the mission — they're logged for a simple review.
       const record = buildRecord(payload, {
