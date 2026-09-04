@@ -163,19 +163,41 @@ test('⚠️ LE SIGNALEMENT DE HUB PORTE SA CO-LIVRAISON', () => {
   assert.ok(/p_mission_id/.test(service), 'la mission n’arrive pas jusqu’à la base');
 });
 
-test('⚠️ ET LES SIX MOTIFS DE L’ÉCRAN SONT CEUX DE LA BASE', () => {
+test('⚠️ ET CHAQUE MOTIF DE L’ÉCRAN EST UNE VALEUR QUE LA BASE ACCEPTE', () => {
   // ⚠️ RIEN À TRADUIRE ICI, contrairement aux signalements de personne : la
   // table `hub_report_reason` a été écrite d'après cet écran. Si les deux
   // divergeaient, un motif partirait comme une valeur d'énumération inconnue et
   // la base refuserait le signalement — debout devant une porte fermée.
+  //
+  // 🔴 LE SENS DE CETTE GARDE A CHANGÉ LE 04/09/2026, ET C'EST DÉLIBÉRÉ. Elle
+  // exigeait l'ÉGALITÉ des deux listes, ce qui interdisait de retirer un motif
+  // de l'écran sans toucher à l'énumération. Or l'inclusion suffit : proposer
+  // MOINS que ce que la base accepte ne casse rien, proposer PLUS casse tout.
+  // C'est cette asymétrie qu'on garde.
   const mock = lire('src/services/mock/hubReports.ts');
-  for (const motif of ['closed', 'wrong_address', 'saturated', 'security',
-                       'partner_uncooperative', 'other']) {
+  for (const motif of ['closed', 'wrong_address', 'saturated', 'security', 'other']) {
     assert.ok(
       new RegExp(`'${motif}'`).test(mock),
       `le motif ${motif} a disparu de l’écran : la base l’attend encore`,
     );
   }
+});
+
+test('🔴 « PARTENAIRE NON COOPÉRATIF » N’EST PLUS PROPOSÉ — ET NE REVIENT PAS SEUL', () => {
+  // 🔴 RETIRÉ DE L'ÉCRAN LE 04/09/2026, PAS DE LA BASE. `hub_report_reason` le
+  // porte toujours et DOIT le porter : un signalement existant l'utilise déjà.
+  // Une valeur d'énumération PostgreSQL ne se retire pas sans recréer le type,
+  // et le faire rendrait cette ligne illisible pour le support qui l'arbitre.
+  //
+  // ⚠️ CE TEST GARDE L'ÉCRAN, PAS L'ÉNUMÉRATION : le motif ne doit plus être
+  // OFFERT. Sans lui, une remise à plat de la liste le ferait revenir sans que
+  // personne le remarque.
+  const mock = lire('src/services/mock/hubReports.ts');
+  const options = mock.slice(mock.indexOf('HUB_REPORT_REASONS'), mock.indexOf('HubReportPayload'));
+  assert.ok(
+    !/'partner_uncooperative'/.test(options),
+    'le motif « Partenaire non coopératif » est de nouveau proposé à l’écran',
+  );
 });
 
 test('🔴 ON NE PROPOSE PAS DE SIGNALER UN HUB QUAND IL N’Y A PAS DE HUB', () => {

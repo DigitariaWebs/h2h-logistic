@@ -1,9 +1,13 @@
+// ⚠️ CE QUE L'ÉCRAN PROPOSE EST UN SOUS-ENSEMBLE DE CE QUE LA BASE ACCEPTE.
+// `hub_report_reason` porte encore `partner_uncooperative`, retiré de l'écran
+// le 04/09/2026, et il DOIT y rester : un signalement l'utilise déjà. Une
+// valeur d'énumération PostgreSQL ne se supprime pas sans recréer le type, et
+// le faire rendrait cette ligne illisible pour le support.
 export type HubReportReason =
   | 'closed'
   | 'wrong_address'
   | 'saturated'
   | 'security'
-  | 'partner_uncooperative'
   | 'other';
 
 export const HUB_REPORT_REASONS: { id: HubReportReason; label: string }[] = [
@@ -11,7 +15,6 @@ export const HUB_REPORT_REASONS: { id: HubReportReason; label: string }[] = [
   { id: 'wrong_address', label: 'Adresse incorrecte ou introuvable' },
   { id: 'saturated', label: 'Hub saturé / pas de place' },
   { id: 'security', label: 'Problème de sécurité' },
-  { id: 'partner_uncooperative', label: 'Partenaire non coopératif' },
   { id: 'other', label: 'Autre' },
 ];
 
